@@ -1,370 +1,254 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from 'react';
 
-const CLAUDE_MODEL = "claude-sonnet-4-20250514";
-const BACKEND_URL = "http://127.0.0.1:8000/api";
-
-const RECIPE_DB = [
-  { id: 1, name: "Grilled Salmon", cuisine: "American", tags: ["high-protein", "pescatarian"], time: 25, calories: 420, ingredients: [{ item: "salmon fillet", qty: "2", unit: "pieces" }, { item: "lemon", qty: "1", unit: "whole" }, { item: "olive oil", qty: "2", unit: "tbsp" }] },
-  { id: 2, name: "Chicken Stir Fry", cuisine: "Asian", tags: ["high-protein", "low-carb", "quick"], time: 20, calories: 380, ingredients: [{ item: "chicken breast", qty: "1.5", unit: "lbs" }, { item: "broccoli", qty: "2", unit: "cups" }, { item: "bell peppers", qty: "2", unit: "whole" }] },
-];
-
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner"];
-
-function retrieveRecipesLocal(prefs) {
-  const { dietary = [], maxTime = 60 } = prefs;
-  const filtered = RECIPE_DB.filter(r => {
-    if (r.time > maxTime) return false;
-    if (dietary.length > 0 && !dietary.some(d => r.tags.includes(d))) return false;
-    return true;
-  });
-  return filtered.length > 2 ? filtered : RECIPE_DB;
-}
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 const css = `
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #080d08; }
-  ::-webkit-scrollbar { width: 6px; } 
-  ::-webkit-scrollbar-track { background: #0d1a0d; }
-  ::-webkit-scrollbar-thumb { background: #2d4a2d; border-radius: 3px; }
-  .tag { transition: all 0.15s; }
-  .tag:hover { border-color: #5a8a5a !important; }
-  .nav-btn { transition: all 0.2s; }
-  .nav-btn:hover { border-color: #5a8a5a !important; color: #9aaa9a !important; }
-  .meal-cell-empty:hover { border-color: #3a6a3a !important; background: #0f220f !important; }
-  .delivery-card:hover { border-color: #3a6a3a !important; }
-  .quick-btn:hover { border-color: #3a5a3a !important; color: #9ab09a !important; background: #0d1a0d !important; }
-  .recipe-option:hover { background: #1a2e1a !important; }
-  .primary-btn:hover { background: #3a7a3a !important; }
-  .check-btn:hover { background: #0d1a0d !important; border-color: #3a5a3a !important; }
-  .hero-card:hover { border-color: #3a7a3a !important; transform: translateY(-2px); }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+  body { font-family: 'Inter', sans-serif; margin: 0; background: #080d08; color: #e0d8c8; }
+  .app-container { display: flex; flex-direction: column; min-height: 100vh; }
+  
+  /* Nav */
+  .nav { border-bottom: 1px solid #1c301c; padding: 24px; display: flex; justify-content: space-between; align-items: center; background: rgba(8, 13, 8, 0.8); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 50; }
+  .logo-container { display: flex; items-center; gap: 12px; }
+  .logo-icon { width: 40px; height: 40px; background: #2a6a2a; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(42, 106, 42, 0.2); }
+  .logo-text h1 { font-size: 24px; font-weight: 700; color: #6ec86e; margin: 0; }
+  .logo-sub { font-size: 10px; color: #4a7a4a; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
+  
+  .tab-bar { display: flex; gap: 8px; background: #0f180f; padding: 4px; border-radius: 12px; border: 1px solid #1c301c; }
+  .tab-btn { padding: 8px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; color: #4a7a4a; background: transparent; }
+  .tab-btn.active { background: #2a6a2a; color: white; }
+  .tab-btn:hover:not(.active) { color: #6ec86e; }
+
+  /* Main */
+  .main { max-width: 1100px; margin: 0 auto; padding: 24px; width: 100%; box-sizing: border-box; }
+  
+  /* Chat */
+  .chat-box { background: #0f180f; border: 1px solid #1c301c; border-radius: 24px; height: 700px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; position: relative; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 32px; display: flex; flex-direction: column; gap: 32px; }
+  
+  .message { display: flex; }
+  .message.user { justify-content: flex-end; }
+  .message.assistant { justify-content: flex-start; }
+  
+  .bubble { max-width: 85%; padding: 20px; border-radius: 24px; font-size: 15px; line-height: 1.6; }
+  .user .bubble { background: #2a6a2a; color: white; box-shadow: 0 4px 15px rgba(42, 106, 42, 0.2); }
+  .assistant .bubble { background: #1c301c; color: #e0d8c8; border: 1px solid rgba(110, 200, 110, 0.1); }
+  
+  /* Cards */
+  .recipe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 24px; }
+  .recipe-card { background: #080d08; border-radius: 16px; border: 1px solid rgba(42, 106, 42, 0.3); overflow: hidden; cursor: pointer; transition: all 0.2s; }
+  .recipe-card:hover { border-color: #6ec86e; transform: translateY(-2px); }
+  .card-img { width: 100%; height: 128px; object-fit: cover; opacity: 0.8; }
+  .card-placeholder { width: 100%; height: 128px; background: #1c301c; display: flex; items-center; justify-content: center; font-size: 32px; }
+  .card-content { padding: 16px; }
+  .card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; }
+  .card-title { font-weight: 700; color: #6ec86e; font-size: 14px; margin: 0; }
+  .card-tag { font-size: 9px; background: #1c301c; padding: 2px 8px; border-radius: 99px; color: #6ec86e; text-transform: uppercase; font-weight: 700; }
+  .card-meta { display: flex; gap: 8px; font-size: 10px; color: #4a7a4a; }
+
+  /* Input */
+  .chat-input-area { padding: 24px; border-top: 1px solid #1c301c; background: rgba(15, 24, 15, 0.5); }
+  .input-wrapper { display: flex; gap: 12px; background: #080d08; padding: 8px; border-radius: 16px; border: 1px solid #1c301c; }
+  .input-wrapper:focus-within { border-color: #2a6a2a; }
+  .chat-input { flex: 1; background: transparent; border: none; outline: none; padding: 8px 16px; color: #e0d8c8; font-size: 14px; }
+  .send-btn { background: #2a6a2a; color: white; border: none; padding: 10px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+  .send-btn:hover { background: #3a7a3a; }
+  .send-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* Empty State */
+  .empty-state { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #4a7a4a; gap: 16px; }
+  .suggestion-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 400px; }
+  .chip { background: #1c301c; border: 1px solid rgba(42, 106, 42, 0.2); color: #6ec86e; padding: 8px 16px; border-radius: 99px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+  .chip:hover { background: rgba(42, 106, 42, 0.3); border-color: #6ec86e; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 24px; }
+  .modal { background: #0f180f; border: 1px solid #1c301c; border-radius: 40px; max-width: 900px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
+  .modal-header { height: 280px; position: relative; flex-shrink: 0; }
+  .modal-img { width: 100%; height: 100%; object-fit: cover; }
+  .modal-gradient { position: absolute; inset: 0; background: linear-gradient(to top, #0f180f, transparent); }
+  .close-btn { position: absolute; top: 24px; right: 24px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); width: 48px; height: 48px; border-radius: 50%; color: white; cursor: pointer; }
+  .modal-title-box { position: absolute; bottom: 24px; left: 32px; }
+  .modal-body { padding: 40px; overflow-y: auto; display: grid; grid-template-columns: 2fr 3fr; gap: 48px; }
+  
+  .section-title { font-size: 18px; font-weight: 700; color: #6ec86e; margin-bottom: 24px; display: flex; items-center; gap: 12px; }
+  .ingredient-list { background: #080d08; padding: 24px; border-radius: 20px; border: 1px solid #1c301c; }
+  .ing-row { display: flex; justify-content: space-between; border-bottom: 1px solid #1c301c; padding: 12px 0; font-size: 14px; }
+  .ing-qty { color: #6ec86e; font-weight: 600; }
+  .instructions-box { background: rgba(28, 48, 28, 0.3); padding: 32px; border-radius: 24px; border: 1px solid rgba(42, 106, 42, 0.1); line-height: 1.8; font-size: 15px; white-space: pre-wrap; }
+
+  /* Loading Dots */
+  .dots { display: flex; gap: 4px; padding: 12px 20px; background: #1c301c; border-radius: 24px; border: 1px solid rgba(110, 200, 110, 0.2); width: fit-content; }
+  .dot { width: 6px; height: 6px; background: #6ec86e; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
+  @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 `;
 
 export default function App() {
-  const [tab, setTab] = useState("home");
-  const [prefs, setPrefs] = useState({ name: "", dietary: [], cuisines: [], maxTime: 45, servings: 2, budget: "moderate" });
-  const [mealPlan, setMealPlan] = useState({});
-  const [groceryList, setGroceryList] = useState([]);
-  const [chat, setChat] = useState([{ role: "assistant", content: "Hi! I am your AI meal planning assistant. Tell me your dietary preferences, ask for recipe ideas, or paste a recipe URL for me to scrape!" }]);
-  const [chatInput, setChatInput] = useState("");
-  const [scrapeUrl, setScrapeUrl] = useState("");
+  const [activeTab, setActiveTab] = useState('chat');
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatInput, setChatInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [generatingPlan, setGeneratingPlan] = useState(false);
-  const chatRef = useRef(null);
-  const DIETARY = ["vegan", "vegetarian", "pescatarian", "high-protein", "low-carb", "budget-friendly"];
-  const CUISINES = ["American", "Asian", "Mediterranean", "Italian", "Mexican", "Californian"];
+  const [selectedRecipe, setSelectedRecipe] = useState(null);
 
-  useEffect(() => { if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight; }, [chat]);
+  const handleChat = async (overrideMsg = null) => {
+    const msg = overrideMsg || chatInput;
+    if (!msg.trim() || loading) return;
+    
+    const userMsg = { role: 'user', content: msg };
+    setChatHistory(prev => [...prev, userMsg]);
+    if (!overrideMsg) setChatInput('');
+    setLoading(true);
 
-  const T = {
-    app: { minHeight: "100vh", background: "#080d08", fontFamily: "Georgia, 'Times New Roman', serif", color: "#e0d8c8" },
-    hdr: { background: "linear-gradient(135deg,#162616,#0c1c0c)", borderBottom: "1px solid #243824", padding: "20px 36px", display: "flex", alignItems: "center", justifyContent: "space-between" },
-    logo: { fontSize: "24px", fontWeight: "700", color: "#6ec86e", letterSpacing: "-0.5px" },
-    logosub: { fontSize: "10px", color: "#4a7a4a", letterSpacing: "3px", textTransform: "uppercase", marginTop: "2px" },
-    main: { maxWidth: "1280px", margin: "0 auto", padding: "36px 24px" },
-    card: { background: "#0f180f", border: "1px solid #1c301c", borderRadius: "14px", padding: "24px", marginBottom: "18px" },
-    ct: { fontSize: "11px", letterSpacing: "2.5px", textTransform: "uppercase", color: "#4a7a4a", marginBottom: "18px" },
-    lbl: { display: "block", fontSize: "11px", color: "#4a7a4a", letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: "6px", marginTop: "14px" },
-    inp: { width: "100%", background: "#0c170c", border: "1px solid #263826", borderRadius: "7px", padding: "9px 13px", color: "#e0d8c8", fontSize: "13px", outline: "none" },
-    sel: { width: "100%", background: "#0c170c", border: "1px solid #263826", borderRadius: "7px", padding: "9px 13px", color: "#e0d8c8", fontSize: "13px", outline: "none", cursor: "pointer" },
-    mc: (filled) => ({ background: filled ? "#101e10" : "#0c170c", border: `1px solid ${filled ? "#263826" : "#1a2e1a"}`, borderRadius: "9px", padding: "9px 11px", minHeight: "68px", position: "relative", cursor: filled ? "default" : "pointer" }),
-    cb: (role) => ({ maxWidth: "82%", padding: "11px 15px", borderRadius: role === "user" ? "14px 14px 3px 14px" : "14px 14px 14px 3px", background: role === "user" ? "#192e19" : "#131c13", border: `1px solid ${role === "user" ? "#263826" : "#1c2e1c"}`, alignSelf: role === "user" ? "flex-end" : "flex-start", fontSize: "13px", lineHeight: "1.6", color: "#ccd8cc" }),
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: msg,
+          history: chatHistory.slice(-5).map(m => ({ role: m.role, content: m.content }))
+        }),
+      });
+      
+      const data = await res.json();
+      setChatHistory(prev => [...prev, { role: 'assistant', content: data.message, recipes: data.recipes || [] }]);
+    } catch (err) {
+      setChatHistory(prev => [...prev, { role: 'assistant', content: "Backend error. Please ensure nourish_backend.py is running!" }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  async function updateGroceryList(planData) {
-    try {
-      const res = await fetch(`${BACKEND_URL}/grocery-list`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: planData })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setGroceryList(data.grocery_list || []);
-      }
-    } catch (err) {
-      console.error("Backend grocery list error", err);
-    }
-  }
-
-  async function generateMealPlan() {
-    setGeneratingPlan(true);
-    let plan = {};
-    try {
-      const res = await fetch(`${BACKEND_URL}/recommend`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preferences: prefs })
-      });
-      let avail = RECIPE_DB;
-      if (res.ok) {
-        const data = await res.json();
-        if (data.recipes && data.recipes.length > 0) avail = data.recipes;
-      }
-      DAYS.forEach(day => { 
-        plan[day] = {}; 
-        MEAL_TYPES.forEach(m => { 
-          plan[day][m] = avail[Math.floor(Math.random() * avail.length)]; 
-        }); 
-      });
-    } catch {
-      const avail2 = retrieveRecipesLocal(prefs);
-      DAYS.forEach(day => { 
-        plan[day] = {}; 
-        MEAL_TYPES.forEach(m => { 
-          plan[day][m] = avail2[Math.floor(Math.random() * avail2.length)]; 
-        }); 
-      });
-    }
-    setMealPlan(plan); 
-    await updateGroceryList(plan);
-    setGeneratingPlan(false);
-    setTab("planner");
-  }
-
-  async function handleScrape() {
-    if (!scrapeUrl) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`${BACKEND_URL}/scrape`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: scrapeUrl })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        alert("Scraped successfully! Added " + data.title + " to vector DB.");
-        setScrapeUrl("");
-      } else {
-        alert("Error: " + data.detail);
-      }
-    } catch(err) {
-      alert("Error calling backend scraper.");
-    }
-    setLoading(false);
-  }
-
-  async function sendChat() {
-    if (!chatInput.trim() || loading) return;
-    const msg = chatInput.trim(); setChatInput("");
-    const hist = [...chat, { role: "user", content: msg }];
-    setChat(hist); setLoading(true);
-    setTimeout(() => {
-      setChat([...hist, { role: "assistant", content: "I've noted that! You can try using the 'Generate AI Meal Plan' button to see how your preferences update your recommendations based on our retrieved recipe embeddings." }]);
-      setLoading(false);
-    }, 800);
-  }
-
-  function assignMeal(day, mealType, recipe) {
-    const updated = { ...mealPlan, [day]: { ...mealPlan[day], [mealType]: recipe } };
-    setMealPlan(updated); 
-    updateGroceryList(updated);
-  }
-
-  const meals = Object.values(mealPlan).flatMap(d => Object.values(d)).filter(Boolean);
-  const totalCal = meals.reduce((s, r) => s + (r.calories || 0), 0);
-
   return (
-    <div style={T.app}>
+    <div className="app-container">
       <style>{css}</style>
-      <div style={T.hdr}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "28px" }}>🌿</span>
-          <div style={{ cursor:"pointer" }} onClick={()=>setTab("home")}><div style={T.logo}>NourishAI</div><div style={T.logosub}>Intelligent Meal Planning</div></div>
+
+      <nav className="nav">
+        <div className="logo-container">
+          <div className="logo-icon">🌿</div>
+          <div className="logo-text">
+            <h1>NourishAI</h1>
+            <div className="logo-sub">RAG Recipe Intelligence</div>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "7px" }}>
-          {[["home","🏠 Home"],["planner","📅 Planner"],["grocery","🛒 Grocery"],["assistant","🤖 Assistant"]].map(([t,label]) => (
-            <button key={t} className="nav-btn" onClick={() => setTab(t)} style={{ padding: "7px 18px", borderRadius: "18px", border: tab===t ? "1px solid #6ec86e" : "1px solid #263826", background: tab===t ? "#192e19" : "transparent", color: tab===t ? "#6ec86e" : "#6a8a6a", cursor: "pointer", fontSize: "12px", letterSpacing: "0.3px" }}>{label}</button>
+        <div className="tab-bar">
+          {['chat', 'planner', 'recommend'].map(t => (
+            <button key={t} onClick={() => setActiveTab(t)} className={`tab-btn ${activeTab === t ? 'active' : ''}`}>
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
           ))}
         </div>
-      </div>
+      </nav>
 
-      <div style={T.main}>
-
-        {tab === "home" && (
-          <div style={{ textAlign:"center", padding:"40px 0" }}>
-            <div style={{ fontSize:"48px", fontWeight:"800", color:"#6ec86e", marginBottom:"10px", letterSpacing:"-1px" }}>Welcome to NourishAI</div>
-            <div style={{ fontSize:"18px", color:"#4a7a4a", marginBottom:"40px", maxWidth:"600px", margin:"0 auto 40px auto" }}>Your intelligent RAG-powered companion for meal planning, automated grocery lists, and instant delivery.</div>
-            
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:"20px", marginBottom:"40px" }}>
-              <div className="hero-card" style={{ ...T.card, cursor:"pointer", transition:"all 0.2s" }} onClick={()=>setTab("planner")}>
-                <div style={{ fontSize:"32px", marginBottom:"15px" }}>📅</div>
-                <div style={{ fontSize:"18px", fontWeight:"600", color:"#b8d0b8", marginBottom:"8px" }}>Smart Planner</div>
-                <div style={{ fontSize:"13px", color:"#4a6a4a" }}>Generate a full 7-day meal plan based on your unique dietary preferences and cook-time constraints.</div>
-              </div>
-              <div className="hero-card" style={{ ...T.card, cursor:"pointer", transition:"all 0.2s" }} onClick={()=>setTab("grocery")}>
-                <div style={{ fontSize:"32px", marginBottom:"15px" }}>🛒</div>
-                <div style={{ fontSize:"18px", fontWeight:"600", color:"#b8d0b8", marginBottom:"8px" }}>Auto-Grocery</div>
-                <div style={{ fontSize:"13px", color:"#4a6a4a" }}>Automatically aggregate ingredients and search Instacart or Amazon Fresh with a single click.</div>
-              </div>
-              <div className="hero-card" style={{ ...T.card, cursor:"pointer", transition:"all 0.2s" }} onClick={()=>setTab("assistant")}>
-                <div style={{ fontSize:"32px", marginBottom:"15px" }}>🤖</div>
-                <div style={{ fontSize:"18px", fontWeight:"600", color:"#b8d0b8", marginBottom:"8px" }}>AI Assistant</div>
-                <div style={{ fontSize:"13px", color:"#4a6a4a" }}>Ask questions about nutrition, substitutions, or scrape new recipes directly from the web into your database.</div>
-              </div>
-            </div>
-
-            <div style={{ ...T.card, maxWidth:"800px", margin:"0 auto", background:"linear-gradient(135deg,#0c1c0c,#162616)" }}>
-              <div style={T.ct}>🚀 Quick Start</div>
-              <div style={{ display:"flex", gap:"10px", justifyContent:"center" }}>
-                <button className="primary-btn" onClick={()=>{setTab("planner")}} style={{ padding:"12px 30px", borderRadius:"8px", border:"none", background:"#2a6a2a", color:"#c0e0c0", cursor:"pointer", fontSize:"14px", fontWeight:"600" }}>Set Preferences</button>
-                <button className="check-btn" onClick={()=>setTab("assistant")} style={{ padding:"12px 30px", borderRadius:"8px", border:"1px solid #263826", background:"transparent", color:"#6a8a6a", cursor:"pointer", fontSize:"14px" }}>Scrape a Recipe</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "planner" && (
-          <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: "24px", alignItems: "start" }}>
-            <div>
-              <div style={T.card}>
-                <div style={T.ct}>⚙️ Your Preferences</div>
-                <label style={T.lbl}>Dietary</label>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:"6px", marginTop:"4px" }}>
-                  {DIETARY.map(d => <span key={d} className="tag" onClick={() => setPrefs(p=>({...p,dietary:p.dietary.includes(d)?p.dietary.filter(x=>x!==d):[...p.dietary,d]}))} style={{ padding:"4px 11px", borderRadius:"10px", fontSize:"11px", cursor:"pointer", border: prefs.dietary.includes(d)?"1px solid #6ec86e":"1px solid #263826", background: prefs.dietary.includes(d)?"#192e19":"transparent", color: prefs.dietary.includes(d)?"#6ec86e":"#4a6a4a" }}>{d}</span>)}
-                </div>
-                <label style={T.lbl}>Cuisines</label>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:"6px", marginTop:"4px" }}>
-                  {CUISINES.map(c => <span key={c} className="tag" onClick={() => setPrefs(p=>({...p,cuisines:p.cuisines.includes(c)?p.cuisines.filter(x=>x!==c):[...p.cuisines,c]}))} style={{ padding:"4px 11px", borderRadius:"10px", fontSize:"11px", cursor:"pointer", border: prefs.cuisines.includes(c)?"1px solid #6ec86e":"1px solid #263826", background: prefs.cuisines.includes(c)?"#192e19":"transparent", color: prefs.cuisines.includes(c)?"#6ec86e":"#4a6a4a" }}>{c}</span>)}
-                </div>
-                <label style={T.lbl}>Max Cook Time</label>
-                <select style={T.sel} value={prefs.maxTime} onChange={e=>setPrefs(p=>({...p,maxTime:+e.target.value}))}>
-                  <option value={15}>15 min</option><option value={30}>30 min</option><option value={45}>45 min</option><option value={60}>60 min</option>
-                </select>
-                <button className="primary-btn" onClick={generateMealPlan} disabled={generatingPlan} style={{ marginTop:"22px", width:"100%", padding:"12px", borderRadius:"8px", border:"none", background: generatingPlan?"#1a3a1a":"#2a6a2a", color:"#c0e0c0", cursor: generatingPlan?"not-allowed":"pointer", fontSize:"13px", fontWeight:"600", letterSpacing:"0.5px" }}>
-                  {generatingPlan ? "⏳ Generating AI plan..." : "✨ Generate AI Meal Plan"}
-                </button>
-              </div>
-
-              <div style={T.card}>
-                <div style={T.ct}>🔗 Scrape Recipe (RAG)</div>
-                <input style={T.inp} value={scrapeUrl} onChange={e => setScrapeUrl(e.target.value)} placeholder="Paste recipe URL (e.g. from AllRecipes)" />
-                <button className="check-btn" onClick={handleScrape} disabled={loading || !scrapeUrl} style={{ marginTop:"10px", width:"100%", padding:"9px", borderRadius:"7px", border:"1px solid #263826", background:"transparent", color:"#6a8a6a", cursor:"pointer", fontSize:"12px" }}>{loading ? "Scraping..." : "📥 Scrape & Embed"}</button>
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"18px" }}>
-                <div>
-                  <div style={{ fontSize:"20px", color:"#b8d0b8", fontWeight:"600" }}>Weekly Meal Plan</div>
-                  <div style={{ fontSize:"12px", color:"#3a5a3a", marginTop:"2px" }}>{meals.length > 0 ? `${meals.length} meals · ~${Math.round(totalCal/7)} cal/day avg` : "Set preferences and generate a plan, or click + to add meals"}</div>
-                </div>
-                {meals.length > 0 && <button className="check-btn" onClick={()=>{setMealPlan({});setGroceryList([]);}} style={{ padding:"7px 16px", borderRadius:"7px", border:"1px solid #263826", background:"transparent", color:"#6a8a6a", cursor:"pointer", fontSize:"12px" }}>Clear Plan</button>}
-              </div>
-
-              <div style={{ overflowX:"auto" }}>
-                <table style={{ width:"100%", borderCollapse:"separate", borderSpacing:"5px" }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width:"65px", fontSize:"9px", color:"#3a5a3a", letterSpacing:"1.5px", textAlign:"left", paddingBottom:"8px", paddingLeft:"4px" }}>MEAL</th>
-                      {DAYS.map(d=><th key={d} style={{ fontSize:"9px", color:"#4a7a4a", letterSpacing:"1px", textAlign:"center", paddingBottom:"8px" }}>{d.slice(0,3).toUpperCase()}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {MEAL_TYPES.map(meal=>(
-                      <tr key={meal}>
-                        <td style={{ fontSize:"9px", color:"#3a5a3a", verticalAlign:"top", paddingTop:"10px", paddingRight:"4px", textAlign:"center" }}>
-                          {meal==="Breakfast"?"🌅":meal==="Lunch"?"☀️":"🌙"}<br/>{meal.slice(0,5)}
-                        </td>
-                        {DAYS.map(day=>{
-                          const recipe = mealPlan[day]?.[meal];
-                          return <td key={day} style={{ verticalAlign:"top" }}><MealCellComp recipe={recipe} onAssign={r=>assignMeal(day,meal,r)} T={T} RECIPE_DB={RECIPE_DB} /></td>;
-                        })}
-                      </tr>
+      <main className="main">
+        {activeTab === 'chat' ? (
+          <div className="chat-box">
+            <div className="chat-messages">
+              {chatHistory.length === 0 && (
+                <div className="empty-state">
+                  <div style={{ fontSize: '64px' }}>🍲</div>
+                  <h2>What shall we cook today?</h2>
+                  <p>I'm your RAG-powered chef. Ask me about your 697+ recipes.</p>
+                  <div className="suggestion-chips">
+                    {["Turkish kebabs", "Healthy breakfast", "Seafood dinner", "Spicy chicken"].map(s => (
+                      <div key={s} className="chip" onClick={() => handleChat(s)}>"{s}"</div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
+              )}
+              
+              {chatHistory.map((msg, i) => (
+                <div key={i} className={`message ${msg.role}`}>
+                  <div className="bubble">
+                    {msg.content}
+                    {msg.recipes && msg.recipes.length > 0 && (
+                      <div className="recipe-grid">
+                        {msg.recipes.map((r, idx) => (
+                          <div key={idx} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
+                            {r.image ? <img src={r.image} className="card-img" /> : <div className="card-placeholder">🍳</div>}
+                            <div className="card-content">
+                              <div className="card-header">
+                                <h4 className="card-title">{r.name}</h4>
+                                <span className="card-tag">{r.category}</span>
+                              </div>
+                              <div className="card-meta">
+                                <span>🌍 {r.cuisine}</span>
+                                <span>🕒 30m</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {loading && (
+                <div className="message assistant">
+                  <div className="dots">
+                    <div className="dot" style={{ animationDelay: '0s' }}></div>
+                    <div className="dot" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="dot" style={{ animationDelay: '0.4s' }}></div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="chat-input-area">
+              <div className="input-wrapper">
+                <input 
+                  className="chat-input"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyPress={e => e.key === 'Enter' && handleChat()}
+                  placeholder="Ask for a recipe or meal idea..."
+                />
+                <button className="send-btn" onClick={() => handleChat()} disabled={loading}>Send ✦</button>
               </div>
             </div>
           </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '100px 0', color: '#4a7a4a' }}>
+            <div style={{ fontSize: '48px' }}>🚧</div>
+            <h2>Planner & Recommendations</h2>
+            <p>Currently optimizing the RAG chat engine. Try the chat!</p>
+          </div>
         )}
+      </main>
 
-        {tab === "grocery" && (
-          <div>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"24px" }}>
+      {selectedRecipe && (
+        <div className="modal-overlay" onClick={() => setSelectedRecipe(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              {selectedRecipe.image ? <img src={selectedRecipe.image} className="modal-img" /> : <div className="card-placeholder" style={{height:'100%'}}>🍲</div>}
+              <div className="modal-gradient"></div>
+              <button className="close-btn" onClick={() => setSelectedRecipe(null)}>✕</button>
+              <div className="modal-title-box">
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  <span className="card-tag" style={{ background: '#2a6a2a', color: 'white' }}>{selectedRecipe.category}</span>
+                  <span className="card-tag" style={{ border: '1px solid #2a6a2a' }}>{selectedRecipe.cuisine}</span>
+                </div>
+                <h2 style={{ fontSize: '36px', margin: 0 }}>{selectedRecipe.name}</h2>
+              </div>
+            </div>
+            <div className="modal-body">
               <div>
-                <div style={{ fontSize:"20px", color:"#b8d0b8", fontWeight:"600" }}>🛒 Grocery List</div>
-                <div style={{ fontSize:"12px", color:"#3a5a3a", marginTop:"2px" }}>{groceryList.length>0?`${groceryList.filter(i=>!i.checked).length} of ${groceryList.length} items remaining`:"Generate a meal plan first"}</div>
-              </div>
-            </div>
-
-            {groceryList.length === 0 ? (
-              <div style={{ ...T.card, textAlign:"center", padding:"60px" }}>
-                <div style={{ fontSize:"44px", marginBottom:"14px" }}>🥬</div>
-                <div style={{ fontSize:"15px", color:"#4a6a4a" }}>No grocery list yet</div>
-                <button className="primary-btn" onClick={()=>setTab("planner")} style={{ marginTop:"18px", padding:"10px 22px", borderRadius:"7px", border:"none", background:"#2a6a2a", color:"#c0e0c0", cursor:"pointer", fontSize:"13px" }}>Go to Planner →</button>
-              </div>
-            ) : (
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"18px" }}>
-                {groceryList.map((item, idx) => (
-                  <div key={idx} style={{ ...T.card, padding:"12px 18px" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:"10px", opacity:item.checked?0.4:1 }}>
-                      <input type="checkbox" checked={item.checked} onChange={()=>setGroceryList(gl=>gl.map((g,i)=>i===idx?{...g,checked:!g.checked}:g))} style={{ width:"16px", height:"16px", accentColor:"#6ec86e", cursor:"pointer" }} />
-                      <div style={{ flex:1, fontSize:"14px", color:item.checked?"#3a5a3a":"#b8d0b8", textDecoration:item.checked?"line-through":"none", fontWeight:"600" }}>{item.item}</div>
-                      <div style={{ fontSize:"12px", color:"#3a5a3a" }}>{Math.round(item.qty*10)/10} {item.unit}</div>
+                <h3 className="section-title">🛒 Ingredients</h3>
+                <div className="ingredient-list">
+                  {selectedRecipe.ingredients.map((ing, i) => (
+                    <div key={i} className="ing-row">
+                      <span>{ing.item}</span>
+                      <span className="ing-qty">{ing.qty}</span>
                     </div>
-                    
-                    <div style={{ marginTop: "12px", display:"flex", gap:"8px", opacity:item.checked?0.4:1 }}>
-                       {item.instacart_url && (
-                          <a href={item.instacart_url} target="_blank" rel="noreferrer" style={{ textDecoration:"none", fontSize:"11px", background:"#0d1a0d", padding:"4px 8px", borderRadius:"4px", color:"#6ec86e", border:"1px solid #1a2e1a" }}>🛒 Instacart</a>
-                       )}
-                       {item.amazon_url && (
-                          <a href={item.amazon_url} target="_blank" rel="noreferrer" style={{ textDecoration:"none", fontSize:"11px", background:"#0d1a0d", padding:"4px 8px", borderRadius:"4px", color:"#e8b060", border:"1px solid #1a2e1a" }}>📦 Amazon Fresh</a>
-                       )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {tab === "assistant" && (
-          <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:"20px" }}>
-            <div style={{ ...T.card, display:"flex", flexDirection:"column", height:"640px" }}>
-              <div style={{ ...T.ct, marginBottom:"14px" }}>🤖 AI Meal Assistant</div>
-              <div ref={chatRef} style={{ flex:1, overflowY:"auto", display:"flex", flexDirection:"column", gap:"10px", paddingBottom:"8px" }}>
-                {chat.map((msg,i)=>(
-                  <div key={i} style={{ display:"flex", justifyContent: msg.role==="user"?"flex-end":"flex-start" }}>
-                    <div style={T.cb(msg.role)}>{msg.content}</div>
-                  </div>
-                ))}
-                {loading && <div style={{ display:"flex" }}><div style={{ ...T.cb("assistant"), color:"#3a5a3a" }}>⏳ thinking...</div></div>}
-              </div>
-              <div style={{ display:"flex", gap:"8px", marginTop:"10px" }}>
-                <input style={{ ...T.inp, flex:1 }} value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder="Ask about meals, nutrition, substitutions..." disabled={loading} />
-                <button className="primary-btn" onClick={sendChat} disabled={loading||!chatInput.trim()} style={{ padding:"9px 18px", borderRadius:"7px", border:"none", background: loading||!chatInput.trim()?"#1a3a1a":"#2a6a2a", color:"#c0e0c0", cursor: loading||!chatInput.trim()?"not-allowed":"pointer", fontSize:"13px", fontWeight:"600" }}>Send</button>
+              <div>
+                <h3 className="section-title">🍳 Instructions</h3>
+                <div className="instructions-box">{selectedRecipe.instructions}</div>
               </div>
             </div>
           </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
-
-function MealCellComp({ recipe, onAssign, T, RECIPE_DB }) {
-  const [open, setOpen] = useState(false);
-  if (recipe) {
-    return (
-      <div style={T.mc(true)}>
-        <div style={{ fontSize:"12px", color:"#b8d0b8", fontWeight:"600", lineHeight:"1.3", paddingRight:"16px" }}>{recipe.name}</div>
-        <div style={{ fontSize:"10px", color:"#3a5a3a", marginTop:"4px" }}>{recipe.time}min</div>
-        <div style={{ fontSize:"10px", color:"#4a6a4a", marginTop:"3px" }}>{recipe.cuisine}</div>
-        <button onClick={()=>onAssign(null)} style={{ position:"absolute", top:"5px", right:"6px", background:"none", border:"none", color:"#2a4a2a", cursor:"pointer", fontSize:"15px", lineHeight:1, padding:0 }}>×</button>
-      </div>
-    );
-  }
-  return (
-    <div style={{ position:"relative" }}>
-      <div className="meal-cell-empty" style={T.mc(false)} onClick={()=>setOpen(!open)}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"50px", color:"#1e361e", fontSize:"20px" }}>+</div>
-      </div>
-      {open && (
-        <div style={{ position:"absolute", top:"100%", left:0, zIndex:100, background:"#0f180f", border:"1px solid #263826", borderRadius:"9px", padding:"7px", minWidth:"160px", boxShadow:"0 8px 28px rgba(0,0,0,0.7)", maxHeight:"220px", overflowY:"auto" }}>
-          {RECIPE_DB.map(r=>(
-            <div key={r.id} className="recipe-option" onClick={()=>{onAssign(r);setOpen(false);}} style={{ padding:"7px 11px", cursor:"pointer", borderRadius:"5px", fontSize:"12px", color:"#b8d0b8", transition:"background 0.1s" }}>
-              {r.name} <span style={{ fontSize:"10px", color:"#3a5a3a" }}>({r.time}m)</span>
-            </div>
-          ))}
         </div>
       )}
     </div>
