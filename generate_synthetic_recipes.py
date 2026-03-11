@@ -24,7 +24,7 @@ def generate_llm_recipe(model="gpt-4o-mini"):
     - strCategory: Choose one from [Beef, Chicken, Dessert, Lamb, Miscellaneous, Pasta, Pork, Seafood, Side, Starter, Vegan, Vegetarian].
     - strArea: The cuisine or origin (e.g., Italian, Japanese, Moroccan, Fusion).
     - strInstructions: Clear, numbered, step-by-step cooking instructions.
-    - strMealThumb: "https://via.placeholder.com/500"
+    - strMealThumb: "https://placehold.co/500"
     - strTags: A comma-separated list of relevant tags.
     - strIngredient1 through strIngredient20: The names of the ingredients.
     - strMeasure1 through strMeasure20: The measurements for each ingredient.

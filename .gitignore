@@ -1,3 +1,8 @@
+# Sensitive Information
+client_secret*.json
+*.db
+llm_recipes.json
+
 # Node.js / React
 node_modules/
 dist/

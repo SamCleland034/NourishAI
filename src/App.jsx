@@ -7,96 +7,292 @@ const css = `
   body { font-family: 'Inter', sans-serif; margin: 0; background: #080d08; color: #e0d8c8; }
   .app-container { display: flex; flex-direction: column; min-height: 100vh; }
   
+  /* Auth */
+  .auth-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .auth-box { background: #0f180f; padding: 48px; border-radius: 24px; border: 1px solid #1c301c; width: 100%; max-width: 400px; text-align: center; }
+  .auth-input { width: 100%; padding: 12px; margin-bottom: 16px; background: #080d08; border: 1px solid #1c301c; border-radius: 8px; color: white; box-sizing: border-box; outline: none; }
+  .auth-btn { width: 100%; background: #2a6a2a; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+  .auth-switch { margin-top: 16px; color: #6ec86e; cursor: pointer; font-size: 14px; }
+
   /* Nav */
   .nav { border-bottom: 1px solid #1c301c; padding: 24px; display: flex; justify-content: space-between; align-items: center; background: rgba(8, 13, 8, 0.8); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 50; }
   .logo-container { display: flex; items-center; gap: 12px; }
-  .logo-icon { width: 40px; height: 40px; background: #2a6a2a; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(42, 106, 42, 0.2); }
+  .logo-icon { width: 40px; height: 40px; background: #2a6a2a; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
   .logo-text h1 { font-size: 24px; font-weight: 700; color: #6ec86e; margin: 0; }
-  .logo-sub { font-size: 10px; color: #4a7a4a; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
   
   .tab-bar { display: flex; gap: 8px; background: #0f180f; padding: 4px; border-radius: 12px; border: 1px solid #1c301c; }
   .tab-btn { padding: 8px 20px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; color: #4a7a4a; background: transparent; }
   .tab-btn.active { background: #2a6a2a; color: white; }
-  .tab-btn:hover:not(.active) { color: #6ec86e; }
+  .logout-btn { background: transparent; color: #c86e6e; border: 1px solid #c86e6e; padding: 6px 12px; border-radius: 6px; cursor: pointer; margin-left: 16px; font-size: 12px;}
 
   /* Main */
-  .main { max-width: 1100px; margin: 0 auto; padding: 24px; width: 100%; box-sizing: border-box; }
+  .main { max-width: 1200px; margin: 0 auto; padding: 24px; width: 100%; box-sizing: border-box; }
   
   /* Chat */
-  .chat-box { background: #0f180f; border: 1px solid #1c301c; border-radius: 24px; height: 700px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; position: relative; }
-  .chat-messages { flex: 1; overflow-y: auto; padding: 32px; display: flex; flex-direction: column; gap: 32px; }
-  
-  .message { display: flex; }
-  .message.user { justify-content: flex-end; }
-  .message.assistant { justify-content: flex-start; }
-  
+  .chat-box { background: #0f180f; border: 1px solid #1c301c; border-radius: 24px; height: 700px; display: flex; flex-direction: column; overflow: hidden; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 32px; display: flex; flex-direction: column; gap: 24px; }
   .bubble { max-width: 85%; padding: 20px; border-radius: 24px; font-size: 15px; line-height: 1.6; }
-  .user .bubble { background: #2a6a2a; color: white; box-shadow: 0 4px 15px rgba(42, 106, 42, 0.2); }
-  .assistant .bubble { background: #1c301c; color: #e0d8c8; border: 1px solid rgba(110, 200, 110, 0.1); }
+  .user .bubble { background: #2a6a2a; color: white; align-self: flex-end; }
+  .assistant .bubble { background: #1c301c; color: #e0d8c8; align-self: flex-start; }
   
-  /* Cards */
-  .recipe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 24px; }
-  .recipe-card { background: #080d08; border-radius: 16px; border: 1px solid rgba(42, 106, 42, 0.3); overflow: hidden; cursor: pointer; transition: all 0.2s; }
-  .recipe-card:hover { border-color: #6ec86e; transform: translateY(-2px); }
-  .card-img { width: 100%; height: 128px; object-fit: cover; opacity: 0.8; }
-  .card-placeholder { width: 100%; height: 128px; background: #1c301c; display: flex; items-center; justify-content: center; font-size: 32px; }
-  .card-content { padding: 16px; }
-  .card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; }
-  .card-title { font-weight: 700; color: #6ec86e; font-size: 14px; margin: 0; }
-  .card-tag { font-size: 9px; background: #1c301c; padding: 2px 8px; border-radius: 99px; color: #6ec86e; text-transform: uppercase; font-weight: 700; }
-  .card-meta { display: flex; gap: 8px; font-size: 10px; color: #4a7a4a; }
+  /* Planner Grid */
+  .planner-grid { display: grid; grid-template-columns: 80px repeat(7, 1fr); gap: 12px; margin-top: 24px; overflow-x: auto; padding-bottom: 24px; }
+  .grid-header { font-weight: 700; color: #6ec86e; text-align: center; padding: 12px; background: #0f180f; border-radius: 12px; border: 1px solid #1c301c; }
+  .grid-time { font-weight: 600; color: #4a7a4a; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .grid-cell { background: #0f180f; border: 1px dashed #1c301c; border-radius: 16px; min-height: 120px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; transition: 0.2s; position: relative; }
+  .grid-cell:hover { border-color: #2a6a2a; background: #1c301c; }
+  .grid-cell.filled { border-style: solid; border-color: #2a6a2a; background: rgba(42, 106, 42, 0.1); }
+  .cell-recipe-name { font-size: 11px; font-weight: 700; color: #6ec86e; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .cell-recipe-img { width: 100%; height: 60px; object-fit: cover; border-radius: 8px; margin-top: 4px; }
+
+  /* Apply Plan Button */
+  .apply-plan-btn { background: #6ec86e; color: #080d08; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; margin-top: 16px; display: flex; align-items: center; gap: 8px; }
+  
+  /* Grid */
+  .recipe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 24px; }
+  .recipe-card { background: #080d08; border-radius: 16px; border: 1px solid #1c301c; overflow: hidden; cursor: pointer; transition: 0.2s; }
+  .recipe-card:hover { border-color: #6ec86e; }
+  .card-img { width: 100%; height: 120px; object-fit: cover; }
+  .modal-img { width: 100%; height: 300px; object-fit: cover; border-radius: 16px; margin-bottom: 24px; border: 1px solid #1c301c; }
+  .card-body { padding: 12px; }
+  .card-title { font-size: 14px; font-weight: 700; color: #6ec86e; margin: 0 0 4px; }
+  .card-meta { font-size: 11px; color: #4a7a4a; }
 
   /* Input */
-  .chat-input-area { padding: 24px; border-top: 1px solid #1c301c; background: rgba(15, 24, 15, 0.5); }
-  .input-wrapper { display: flex; gap: 12px; background: #080d08; padding: 8px; border-radius: 16px; border: 1px solid #1c301c; }
-  .input-wrapper:focus-within { border-color: #2a6a2a; }
-  .chat-input { flex: 1; background: transparent; border: none; outline: none; padding: 8px 16px; color: #e0d8c8; font-size: 14px; }
-  .send-btn { background: #2a6a2a; color: white; border: none; padding: 10px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
-  .send-btn:hover { background: #3a7a3a; }
-  .send-btn:disabled { opacity: 0.5; cursor: default; }
-
-  /* Empty State */
-  .empty-state { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #4a7a4a; gap: 16px; }
-  .suggestion-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 400px; }
-  .chip { background: #1c301c; border: 1px solid rgba(42, 106, 42, 0.2); color: #6ec86e; padding: 8px 16px; border-radius: 99px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
-  .chip:hover { background: rgba(42, 106, 42, 0.3); border-color: #6ec86e; }
+  .chat-input-area { padding: 24px; border-top: 1px solid #1c301c; display: flex; gap: 12px; }
+  .chat-input { flex: 1; background: #080d08; border: 1px solid #1c301c; border-radius: 12px; padding: 12px 16px; color: white; outline: none; }
+  .send-btn { background: #2a6a2a; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; }
 
   /* Modal */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 24px; }
-  .modal { background: #0f180f; border: 1px solid #1c301c; border-radius: 40px; max-width: 900px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
-  .modal-header { height: 280px; position: relative; flex-shrink: 0; }
-  .modal-img { width: 100%; height: 100%; object-fit: cover; }
-  .modal-gradient { position: absolute; inset: 0; background: linear-gradient(to top, #0f180f, transparent); }
-  .close-btn { position: absolute; top: 24px; right: 24px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); width: 48px; height: 48px; border-radius: 50%; color: white; cursor: pointer; }
-  .modal-title-box { position: absolute; bottom: 24px; left: 32px; }
-  .modal-body { padding: 40px; overflow-y: auto; display: grid; grid-template-columns: 2fr 3fr; gap: 48px; }
+  .modal { background: #0f180f; border: 1px solid #1c301c; border-radius: 32px; width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; position: relative; }
+  .modal-content { padding: 40px; }
+  .close-modal { position: absolute; top: 24px; right: 24px; background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
   
-  .section-title { font-size: 18px; font-weight: 700; color: #6ec86e; margin-bottom: 24px; display: flex; items-center; gap: 12px; }
-  .ingredient-list { background: #080d08; padding: 24px; border-radius: 20px; border: 1px solid #1c301c; }
-  .ing-row { display: flex; justify-content: space-between; border-bottom: 1px solid #1c301c; padding: 12px 0; font-size: 14px; }
-  .ing-qty { color: #6ec86e; font-weight: 600; }
-  .instructions-box { background: rgba(28, 48, 28, 0.3); padding: 32px; border-radius: 24px; border: 1px solid rgba(42, 106, 42, 0.1); line-height: 1.8; font-size: 15px; white-space: pre-wrap; }
+  .fav-btn { padding: 10px 20px; border-radius: 12px; font-weight: 700; cursor: pointer; border: none; margin-top: 16px; transition: 0.2s; }
+  .fav-btn.add { background: #6ec86e; color: #080d08; }
+  .fav-btn.remove { background: #c86e6e; color: white; }
 
-  /* Loading Dots */
-  .dots { display: flex; gap: 4px; padding: 12px 20px; background: #1c301c; border-radius: 24px; border: 1px solid rgba(110, 200, 110, 0.2); width: fit-content; }
-  .dot { width: 6px; height: 6px; background: #6ec86e; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
-  @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+  .calendar-btn { background: #4285F4; color: white; border: none; padding: 10px 20px; border-radius: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+  .calendar-btn:hover { background: #357ae8; }
 `;
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('chat');
-  const [chatHistory, setChatHistory] = useState([]);
-  const [chatInput, setChatInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [selectedRecipe, setSelectedRecipe] = useState(null);
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MEALS = ["Breakfast", "Lunch", "Dinner"];
 
-  const handleChat = async (overrideMsg = null) => {
-    const msg = overrideMsg || chatInput;
-    if (!msg.trim() || loading) return;
-    
-    const userMsg = { role: 'user', content: msg };
-    setChatHistory(prev => [...prev, userMsg]);
-    if (!overrideMsg) setChatInput('');
+const getWeekID = (date = new Date()) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+};
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  const [activeTab, setActiveTab] = useState('chat');
+  const [chatHistory, setChatHistory] = useState([
+    { role: 'assistant', content: "Hello! I'm NourishAI, your personal healthy eating companion. How can I help you with your meal planning today?" }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [numRecipes, setNumRecipes] = useState(3);
+  const [loading, setLoading] = useState(false);
+  
+  const [favorites, setFavorites] = useState([]);
+  const [weeklySchedule, setWeeklySchedule] = useState({});
+  const [recommendations, setRecommendations] = useState([]);
+  const [allFetchedRecipes, setAllFetchedRecipes] = useState({}); 
+  const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [currentWeek, setCurrentWeek] = useState(new Date());
+  const [isSelectingFor, setIsSelectingFor] = useState(null);
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [plannerPromptInput, setPlannerPromptInput] = useState('');
+  const [isRecurringApplied, setIsRecurringApplied] = useState(false);
+
+  const weekId = getWeekID(currentWeek);
+
+  useEffect(() => {
+    if (user) {
+      fetchFavorites();
+      checkGoogleStatus();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user && activeTab === 'planner') {
+      fetchSchedule();
+      fetchRecommendations();
+    }
+  }, [user, activeTab, weekId]);
+
+  const handleAuth = async () => {
+    if (!username || !password) return alert("Fill in all fields");
+    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    try {
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUser(data);
+      } else alert(data.detail || "Auth failed");
+    } catch { alert("Backend offline."); }
+  };
+
+  const checkGoogleStatus = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/google/status/${user.user_id}`);
+      const data = await res.json();
+      setIsGoogleConnected(data.connected);
+    } catch {}
+  };
+
+  const connectGoogle = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/google/login/${user.user_id}`);
+      const data = await res.json();
+      // Use the URL from the backend exactly as provided
+      window.open(data.url, 'GoogleLogin', 'width=600,height=600');
+      
+      // Poll for success
+      const interval = setInterval(async () => {
+        const check = await fetch(`${BACKEND_URL}/api/google/status/${user.user_id}`);
+        const status = await check.json();
+        if (status.connected) {
+          setIsGoogleConnected(true);
+          clearInterval(interval);
+          alert("Google Calendar connected!");
+        }
+      }, 2000);
+    } catch { alert("Failed to start Google login."); }
+  };
+
+  const exportToGoogle = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/google/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id, week_id: weekId, schedule: weeklySchedule })
+      });
+      const data = await res.json();
+      if (res.ok) alert(`Success! Created ${data.events_created} events in your calendar.`);
+      else alert("Export failed: " + data.detail);
+    } catch { alert("Error connecting to Google."); }
+    finally { setLoading(false); }
+  };
+
+  const fetchFavorites = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/favorites/${user.user_id}`);
+      const data = await res.json();
+      const favs = data.recipes || [];
+      setFavorites(favs);
+      setAllFetchedRecipes(prev => {
+        const next = { ...prev };
+        favs.forEach(r => next[r.id] = r);
+        return next;
+      });
+    } catch {}
+  };
+
+  const fetchSchedule = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/schedule/${user.user_id}/${weekId}`);
+      const data = await res.json();
+      setWeeklySchedule(data.schedule || {});
+      setIsRecurringApplied(data.is_recurring_applied || false);
+      if (data.recipes) {
+        setAllFetchedRecipes(prev => ({ ...prev, ...data.recipes }));
+      }
+    } catch {
+      setWeeklySchedule({});
+    }
+  };
+
+  const handlePlannerPrompt = async () => {
+    if (!plannerPromptInput.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/planner/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: plannerPromptInput })
+      });
+      const data = await res.json();
+      if (data.suggested_plan) {
+        setWeeklySchedule(data.suggested_plan);
+        if (data.recipes) {
+          setAllFetchedRecipes(prev => {
+            const next = { ...prev };
+            data.recipes.forEach(r => next[r.id] = r);
+            return next;
+          });
+        }
+        setPlannerPromptInput('');
+      } else alert("AI couldn't generate a plan. Try a different prompt.");
+    } catch { alert("Error generating plan."); }
+    finally { setLoading(false); }
+  };
+
+  const autoFillPlanner = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/planner/autofill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id })
+      });
+      const data = await res.json();
+      setWeeklySchedule(data.schedule);
+      if (data.recipes) {
+        setAllFetchedRecipes(prev => ({ ...prev, ...data.recipes }));
+      }
+    } catch { alert("Error auto-filling."); }
+    finally { setLoading(false); }
+  };
+
+  const setAsRecurring = async () => {
+    if (!confirm("Save this current week as your recurring template? It will show up for any empty future weeks.")) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id, week_id: 'recurring', schedule: weeklySchedule })
+      });
+      if (res.ok) alert("Default recurring schedule saved!");
+    } catch { alert("Error saving recurring schedule."); }
+  };
+
+  const fetchRecommendations = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/recommendations/${user.user_id}`);
+      const data = await res.json();
+      setRecommendations(data.recipes || []);
+      setAllFetchedRecipes(prev => {
+        const next = { ...prev };
+        (data.recipes || []).forEach(r => next[r.id] = r);
+        return next;
+      });
+    } catch {}
+  };
+
+  const handleChat = async () => {
+    if (!chatInput.trim()) return;
+    const msg = chatInput;
+    setChatInput('');
+    setChatHistory(prev => [...prev, { role: 'user', content: msg }]);
     setLoading(true);
 
     try {
@@ -104,114 +300,291 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: msg,
-          history: chatHistory.slice(-5).map(m => ({ role: m.role, content: m.content }))
-        }),
+          message: msg, 
+          history: chatHistory.slice(-5),
+          num_recipes: parseInt(numRecipes)
+        })
       });
-      
       const data = await res.json();
-      setChatHistory(prev => [...prev, { role: 'assistant', content: data.message, recipes: data.recipes || [] }]);
-    } catch (err) {
-      setChatHistory(prev => [...prev, { role: 'assistant', content: "Backend error. Please ensure nourish_backend.py is running!" }]);
+      
+      setAllFetchedRecipes(prev => {
+        const next = { ...prev };
+        (data.recipes || []).forEach(r => next[r.id] = r);
+        return next;
+      });
+
+      setChatHistory(prev => [...prev, { 
+        role: 'assistant', 
+        content: data.message, 
+        recipes: data.recipes,
+        suggested_plan: data.suggested_plan
+      }]);
+    } catch {
+      setChatHistory(prev => [...prev, { role: 'assistant', content: "Error connecting to backend." }]);
     } finally {
       setLoading(false);
     }
   };
 
+  const applyPlan = async (plan) => {
+    setWeeklySchedule(plan);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id, week_id: weekId, schedule: plan })
+      });
+      if (res.ok) {
+        alert("Plan applied to your weekly schedule!");
+        setActiveTab('planner');
+      }
+    } catch { alert("Failed to save schedule."); }
+  };
+
+  const saveManualSchedule = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id, week_id: weekId, schedule: weeklySchedule })
+      });
+      if (res.ok) alert("Schedule saved!");
+    } catch { alert("Error saving schedule."); }
+  };
+
+  const addToPlanner = (recipe) => {
+    if (!isSelectingFor) return;
+    const { day, meal } = isSelectingFor;
+    setWeeklySchedule(prev => ({
+      ...prev,
+      [day]: {
+        ...(prev[day] || { Breakfast: null, Lunch: null, Dinner: null }),
+        [meal]: recipe.id
+      }
+    }));
+    setAllFetchedRecipes(prev => ({ ...prev, [recipe.id]: recipe }));
+    setIsSelectingFor(null);
+    setSelectedRecipe(null);
+  };
+
+  const changeWeek = (offset) => {
+    const next = new Date(currentWeek);
+    next.setDate(next.getDate() + offset * 7);
+    setCurrentWeek(next);
+  };
+
+  const toggleFavorite = async (recipe) => {
+    if (!recipe || !recipe.id) return;
+    const isCurrentlyFav = favorites.some(f => f.id === recipe.id);
+    const path = isCurrentlyFav ? 'api/favorites/remove' : 'api/favorites';
+    const body = isCurrentlyFav ? { user_id: user.user_id, recipe_id: recipe.id } : { user_id: user.user_id, recipe };
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        await fetchFavorites();
+        alert(isCurrentlyFav ? "Removed!" : "Added!");
+      }
+    } catch (err) { alert("Network error."); }
+  };
+
+  const isFav = (rid) => favorites.some(f => f.id === rid);
+
+  const getWeekRange = () => {
+    const start = new Date(currentWeek);
+    start.setDate(start.getDate() - start.getDay());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    const options = { month: 'short', day: 'numeric' };
+    return `${start.toLocaleDateString(undefined, options)} - ${end.toLocaleDateString(undefined, options)}, ${end.getFullYear()}`;
+  };
+
+  if (!user) return (
+    <div className="auth-container">
+      <style>{css}</style>
+      <div className="auth-box">
+        <div className="logo-icon" style={{margin:'0 auto 24px'}}>🌿</div>
+        <h2>{authMode === 'login' ? 'Login to NourishAI' : 'Create Account'}</h2>
+        <input className="auth-input" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
+        <input className="auth-input" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
+        <button className="auth-btn" onClick={handleAuth}>{authMode === 'login' ? 'Login' : 'Signup'}</button>
+        <p className="auth-switch" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}>
+          {authMode === 'login' ? "New? Sign up" : "Back to Login"}
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="app-container">
       <style>{css}</style>
-
       <nav className="nav">
         <div className="logo-container">
           <div className="logo-icon">🌿</div>
           <div className="logo-text">
             <h1>NourishAI</h1>
-            <div className="logo-sub">RAG Recipe Intelligence</div>
+            <div style={{ fontSize: '10px', color: '#4a7a4a', fontWeight: 'bold' }}>CHEF {user.username}</div>
           </div>
         </div>
-        <div className="tab-bar">
-          {['chat', 'planner', 'recommend'].map(t => (
-            <button key={t} onClick={() => setActiveTab(t)} className={`tab-btn ${activeTab === t ? 'active' : ''}`}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
+        <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
+          {!isGoogleConnected ? (
+            <button className="calendar-btn" onClick={connectGoogle}>Connect Google Calendar</button>
+          ) : (
+            <span style={{color:'#6ec86e', fontSize:'12px', fontWeight:'700'}}>✓ Calendar Connected</span>
+          )}
+          <div className="tab-bar">
+            {['chat', 'planner', 'favorites'].map(t => (
+              <button key={t} onClick={() => setActiveTab(t)} className={`tab-btn ${activeTab === t ? 'active' : ''}`}>
+                {t.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <button className="logout-btn" onClick={() => setUser(null)}>LOGOUT</button>
         </div>
       </nav>
 
       <main className="main">
-        {activeTab === 'chat' ? (
+        {activeTab === 'chat' && (
           <div className="chat-box">
             <div className="chat-messages">
-              {chatHistory.length === 0 && (
-                <div className="empty-state">
-                  <div style={{ fontSize: '64px' }}>🍲</div>
-                  <h2>What shall we cook today?</h2>
-                  <p>I'm your RAG-powered chef. Ask me about your 697+ recipes.</p>
-                  <div className="suggestion-chips">
-                    {["Turkish kebabs", "Healthy breakfast", "Seafood dinner", "Spicy chicken"].map(s => (
-                      <div key={s} className="chip" onClick={() => handleChat(s)}>"{s}"</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {chatHistory.map((msg, i) => (
-                <div key={i} className={`message ${msg.role}`}>
+              {chatHistory.map((m, i) => (
+                <div key={i} className={m.role === 'user' ? 'user' : 'assistant'} style={{display:'flex', flexDirection:'column'}}>
                   <div className="bubble">
-                    {msg.content}
-                    {msg.recipes && msg.recipes.length > 0 && (
-                      <div className="recipe-grid">
-                        {msg.recipes.map((r, idx) => (
-                          <div key={idx} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
-                            {r.image ? <img src={r.image} className="card-img" /> : <div className="card-placeholder">🍳</div>}
-                            <div className="card-content">
-                              <div className="card-header">
-                                <h4 className="card-title">{r.name}</h4>
-                                <span className="card-tag">{r.category}</span>
-                              </div>
-                              <div className="card-meta">
-                                <span>🌍 {r.cuisine}</span>
-                                <span>🕒 30m</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                    {m.content}
+                    {m.suggested_plan && (
+                      <button className="apply-plan-btn" onClick={() => applyPlan(m.suggested_plan)}>
+                        📅 Apply this Weekly Plan to my Schedule
+                      </button>
                     )}
                   </div>
+                  {m.recipes && (
+                    <div className="recipe-grid">
+                      {m.recipes.map(r => (
+                        <div key={r.id} className="recipe-card" onClick={() => isSelectingFor ? addToPlanner(r) : setSelectedRecipe(r)}>
+                          <img 
+                            src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
+                            className="card-img" 
+                            onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
+                          />
+                          <div className="card-body">
+                            <p className="card-title">{r.name}</p>
+                            <div className="card-meta"><span>{r.cuisine}</span></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
-              
-              {loading && (
-                <div className="message assistant">
-                  <div className="dots">
-                    <div className="dot" style={{ animationDelay: '0s' }}></div>
-                    <div className="dot" style={{ animationDelay: '0.2s' }}></div>
-                    <div className="dot" style={{ animationDelay: '0.4s' }}></div>
-                  </div>
-                </div>
-              )}
+              {loading && <div className="assistant"><div className="bubble">...</div></div>}
+            </div>
+            <div className="chat-input-area">
+              <input className="chat-input" placeholder="Ask for a recipe or plan..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleChat()} />
+              <button className="send-btn" onClick={handleChat}>Send</button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'planner' && (
+          <div>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
+              <div>
+                <h2 style={{color:'#6ec86e', margin:0}}>Weekly Meal Schedule</h2>
+                <p style={{color:'#4a7a4a', fontSize:'14px', fontWeight:'700', marginTop:'4px'}}>
+                  {getWeekRange()} 
+                  {isRecurringApplied && <span style={{marginLeft:'12px', background:'#2a6a2a', color:'white', padding:'2px 8px', borderRadius:'4px', fontSize:'10px'}}>RECURRING APPLIED</span>}
+                </p>
+              </div>
+              <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
+                {isGoogleConnected && <button className="calendar-btn" onClick={exportToGoogle}>📅 Export to Calendar</button>}
+                <button className="tab-btn" onClick={() => changeWeek(-1)}>← Previous</button>
+                <button className="tab-btn" onClick={() => changeWeek(1)}>Next →</button>
+                <button className="apply-plan-btn" style={{marginTop:0}} onClick={saveManualSchedule}>💾 Save Changes</button>
+              </div>
             </div>
 
-            <div className="chat-input-area">
-              <div className="input-wrapper">
-                <input 
-                  className="chat-input"
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && handleChat()}
-                  placeholder="Ask for a recipe or meal idea..."
-                />
-                <button className="send-btn" onClick={() => handleChat()} disabled={loading}>Send ✦</button>
+            <div style={{background: '#0f180f', padding: '16px', borderRadius: '16px', border: '1px solid #1c301c', marginBottom: '24px', display:'flex', gap: '12px', alignItems: 'center'}}>
+              <input 
+                className="chat-input" 
+                placeholder="Ask AI to arrange your week (e.g. 'high protein', 'vegan Mon-Wed')..." 
+                value={plannerPromptInput} 
+                onChange={e => setPlannerPromptInput(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && handlePlannerPrompt()}
+              />
+              <button className="send-btn" onClick={handlePlannerPrompt} disabled={loading}>{loading ? '...' : 'Generate'}</button>
+              <div style={{width:'1px', height:'30px', background:'#1c301c'}}></div>
+              <button className="tab-btn" onClick={autoFillPlanner} style={{borderColor:'#6ec86e', color:'#6ec86e'}}>🪄 Auto-Fill</button>
+              <button className="tab-btn" onClick={setAsRecurring} style={{borderColor:'#4285F4', color:'#4285F4'}}>🔁 Set Recurring</button>
+            </div>
+
+            <div className="planner-grid">
+              <div className="grid-header" style={{background:'transparent', border:'none'}}></div>
+              {DAYS.map(d => <div key={d} className="grid-header">{d}</div>)}
+              {MEALS.map(m => (
+                <React.Fragment key={m}>
+                  <div className="grid-time">{m}</div>
+                  {DAYS.map(d => {
+                    const recipeId = weeklySchedule?.[d]?.[m];
+                    const recipe = allFetchedRecipes[recipeId];
+                    return (
+                      <div key={d+m} className={`grid-cell ${recipe ? 'filled' : ''}`} onClick={() => { if (recipe) setSelectedRecipe(recipe); else setIsSelectingFor({ day: d, meal: m }); }}>
+                        {recipe ? (
+                          <>
+                            <span className="cell-recipe-name">{recipe.name}</span>
+                            {recipe.image && (
+                              <img 
+                                src={recipe.image} 
+                                className="cell-recipe-img" 
+                                onError={(e) => { e.target.src = 'https://placehold.co/100x60?text=Error'; }} 
+                              />
+                            )}
+                            <button style={{position:'absolute', top:4, right:4, background:'rgba(200,110,110,0.8)', color:'white', border:'none', borderRadius:'50%', width:'16px', height:'16px', fontSize:'10px', cursor:'pointer'}} onClick={(e) => { e.stopPropagation(); setWeeklySchedule(prev => ({ ...prev, [d]: { ...(prev?.[d] || {}), [m]: null } })); }}>✕</button>
+                          </>
+                        ) : <span style={{fontSize:'10px', color:'#4a7a4a'}}>+ Add</span>}
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+
+            <div style={{marginTop:'40px'}}>
+              <h3 style={{color:'#6ec86e'}}>Suggestions for you</h3>
+              <div className="recipe-grid">
+                {recommendations.map(r => (
+                  <div key={r.id} className="recipe-card" onClick={() => isSelectingFor ? addToPlanner(r) : setSelectedRecipe(r)}>
+                    <img 
+                      src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
+                      className="card-img" 
+                      onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
+                    />
+                    <div className="card-body"><p className="card-title">{r.name}</p></div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-        ) : (
-          <div style={{ textAlign: 'center', padding: '100px 0', color: '#4a7a4a' }}>
-            <div style={{ fontSize: '48px' }}>🚧</div>
-            <h2>Planner & Recommendations</h2>
-            <p>Currently optimizing the RAG chat engine. Try the chat!</p>
+        )}
+
+        {activeTab === 'favorites' && (
+          <div>
+            <h2 style={{color:'#6ec86e'}}>Saved Favorites</h2>
+            <div className="recipe-grid">
+              {favorites.map(r => (
+                <div key={r.id} className="recipe-card" onClick={() => isSelectingFor ? addToPlanner(r) : setSelectedRecipe(r)}>
+                  <img 
+                    src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
+                    className="card-img" 
+                    onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
+                  />
+                  <div className="card-body"><p className="card-title">{r.name}</p></div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </main>
@@ -219,33 +592,24 @@ export default function App() {
       {selectedRecipe && (
         <div className="modal-overlay" onClick={() => setSelectedRecipe(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              {selectedRecipe.image ? <img src={selectedRecipe.image} className="modal-img" /> : <div className="card-placeholder" style={{height:'100%'}}>🍲</div>}
-              <div className="modal-gradient"></div>
-              <button className="close-btn" onClick={() => setSelectedRecipe(null)}>✕</button>
-              <div className="modal-title-box">
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <span className="card-tag" style={{ background: '#2a6a2a', color: 'white' }}>{selectedRecipe.category}</span>
-                  <span className="card-tag" style={{ border: '1px solid #2a6a2a' }}>{selectedRecipe.cuisine}</span>
-                </div>
-                <h2 style={{ fontSize: '36px', margin: 0 }}>{selectedRecipe.name}</h2>
-              </div>
-            </div>
-            <div className="modal-body">
-              <div>
-                <h3 className="section-title">🛒 Ingredients</h3>
-                <div className="ingredient-list">
-                  {selectedRecipe.ingredients.map((ing, i) => (
-                    <div key={i} className="ing-row">
-                      <span>{ing.item}</span>
-                      <span className="ing-qty">{ing.qty}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h3 className="section-title">🍳 Instructions</h3>
-                <div className="instructions-box">{selectedRecipe.instructions}</div>
+            <button className="close-modal" onClick={() => setSelectedRecipe(null)}>✕</button>
+            <div className="modal-content">
+              {selectedRecipe.image && (
+                <img 
+                  src={selectedRecipe.image} 
+                  className="modal-img" 
+                  alt={selectedRecipe.name} 
+                  onError={(e) => { e.target.src = 'https://placehold.co/600x300?text=Error+Loading+Image'; }}
+                />
+              )}
+              <h2 style={{color:'#6ec86e', marginTop: selectedRecipe.image ? '0' : '24px'}}>{selectedRecipe.name}</h2>
+              <p style={{color:'#4a7a4a'}}>{selectedRecipe.cuisine} • {selectedRecipe.category}</p>
+              <button className={`fav-btn ${isFav(selectedRecipe.id) ? 'remove' : 'add'}`} onClick={() => toggleFavorite(selectedRecipe)}>
+                {isFav(selectedRecipe.id) ? '✕ Remove' : '❤ Favorite'}
+              </button>
+              <div style={{marginTop:'24px', display:'grid', gridTemplateColumns:'1fr 2fr', gap:'32px'}}>
+                <div><h3>Ingredients</h3><ul>{(selectedRecipe.ingredients || []).map((ing, i) => <li key={i}>{ing.item || ing}</li>)}</ul></div>
+                <div><h3>Instructions</h3><p style={{whiteSpace:'pre-wrap'}}>{selectedRecipe.instructions}</p></div>
               </div>
             </div>
           </div>

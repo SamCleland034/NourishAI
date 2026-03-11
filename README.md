@@ -1,92 +1,48 @@
-# 🌿 NourishAI - RAG-Powered Recipe Intelligence
+# NourishAI 🌿
 
-NourishAI is an intelligent culinary assistant that uses **Retrieval-Augmented Generation (RAG)** to provide personalized recipe recommendations. It combines a local vector database (ChromaDB) with large language models (via LiteLLM) to "know" about hundreds of real-world recipes and answer your cooking questions.
+NourishAI is an intelligent, RAG-powered (Retrieval-Augmented Generation) meal planning and healthy eating companion. It combines a rich database of global recipes with advanced AI to help you plan your week, discover new tastes, and stay on track with your nutritional goals.
 
----
+## 🚀 Key Features
 
-## 🏗️ Architecture & Tech Stack
+### 1. Smart Chat & Recipe Discovery
+*   **AI Chef Assistant:** Ask for recipes based on ingredients, mood, or dietary needs.
+*   **Initial Greeting:** Get welcomed by a helpful assistant ready to guide your meal planning.
+*   **Visual Discovery:** Every recipe returned includes high-quality imagery and detailed step-by-step instructions.
 
-- **Frontend:** React (Vite) with a custom CSS culinary theme.
-- **Backend:** FastAPI (Python) serving as the orchestration layer.
-- **Vector Database:** ChromaDB (Local Persistent) for high-speed similarity search.
-- **Embeddings:** `all-MiniLM-L6-v2` (ONNX) running locally to convert recipes into 384-dimensional vectors.
-- **LLM Integration:** LiteLLM (supports OpenAI, Anthropic, Gemini, etc.) for conversational RAG.
-- **Data Source:** TheMealDB API + Synthetic AI-generated recipes.
+### 2. Intelligent Weekly Planner
+*   **AI Planner Prompt:** Don't just pick recipes—ask the AI to "Arrange a high-protein week" or "Plan a vegan Monday and Tuesday." The AI will automatically structure your grid.
+*   **🪄 Magic Auto-Fill:** Instantly populate your entire week with a single click. The system analyzes your favorites and preferences to pick 21 diverse, relevant meals (including smart Breakfast detection).
+*   **🔁 Recurring Schedules:** Save your perfect week as a "Recurring Template." Any future week you visit that is empty will automatically pull from this template, automating your long-term planning.
+*   **Drag-and-Drop Feel:** Click any empty cell to add recipes from your favorites or recommendations.
 
----
+### 3. Google Calendar Integration
+*   **One-Click Export:** Seamlessly sync your weekly plan to your Google Calendar.
+*   **Detailed Events:** Each calendar event includes the recipe name and a full list of required ingredients in the description.
 
-## 🚀 Getting Started
+### 4. Robust Image System
+*   **Automated Repair:** A background system ensures that images from TheMealDB and synthetic AI-generated recipes are always valid.
+*   **Smart Fallbacks:** If a source image is ever broken, the app automatically generates a clean, readable placeholder so you never see a "black box."
 
-### 1. Prerequisites
-- **Python 3.12+** (Recommended: [uv](https://github.com/astral-sh/uv))
-- **Node.js & npm**
-- **API Key:** Set your `OPENAI_API_KEY` (or other provider keys) in your environment.
+## 🛠️ Technical Stack
 
-### 2. Installation
-```powershell
-# Install Python dependencies
-uv sync
+*   **Frontend:** React (Vite), Tailwind-inspired Vanilla CSS for a premium dark-mode aesthetic.
+*   **Backend:** FastAPI (Python).
+*   **Database:** SQLite (Users/Schedules/Favorites) + ChromaDB (Vector store for RAG).
+*   **AI/LLM:** LiteLLM (supporting GPT-4o-mini and others) for chat and arrangement logic.
+*   **Data Ingestion:** Custom scripts for TheMealDB API and synthetic recipe generation.
 
-# Install Frontend dependencies
-npm install
-```
+## 🏃 Getting Started
 
-### 3. Data Ingestion (Seeding the Brain)
-You need to fill the database before the AI can "know" anything.
-
-- **Ingest 600+ real recipes from TheMealDB:**
-  ```powershell
-  uv run ingest_themealdb.py
-  ```
-- **Generate custom AI recipes (Synthetic Data):**
-  ```powershell
-  uv run generate_synthetic_recipes.py --count 5 --model gpt-4o-mini
-  ```
-
----
-
-## 🛠️ Tools & Usage
-
-### Running the System
-1. **Start the Backend:**
-   ```powershell
-   uv run nourish_backend.py
-   ```
-2. **Start the Frontend:**
-   ```powershell
-   npm run dev
-   ```
-
-### Inspecting the Database
-Use the CLI tool to see what's inside your ChromaDB:
-```powershell
-# See stats (Category/Cuisine distribution)
-uv run inspect_db.py --stats
-
-# Search for a specific recipe with full details
-uv run inspect_db.py --search "Kebab" --full
-
-# List the last 10 added recipes
-uv run inspect_db.py --list 10
-```
+1.  **Backend:**
+    ```bash
+    uvicorn nourish_backend:app --reload
+    ```
+2.  **Frontend:**
+    ```bash
+    npm run dev
+    ```
+3.  **Database Setup (Optional):**
+    Run `python ingest_themealdb.py` to populate your local vector store.
 
 ---
-
-## 🧠 How the RAG Pipeline Works
-
-1. **User Query:** You ask, *"I want a spicy chicken dish from Turkey."*
-2. **Retrieval:** The backend converts your question into a vector and searches **ChromaDB** for the top 3 most similar recipes (e.g., *Adana Kebab*).
-3. **Augmentation:** The system builds a prompt: *"You are NourishAI. Use these recipes [Adana Kebab, etc.] to answer the user: 'I want a spicy chicken dish from Turkey'."*
-4. **Generation:** The **LLM** (GPT-4o/Claude) reads the retrieved recipes and writes a friendly response.
-5. **Visualization:** The backend returns the text **plus** the raw metadata, allowing the React UI to render rich cards and images alongside the chat.
-
----
-
-## 📂 Project Structure
-
-- `nourish_backend.py`: The FastAPI server & RAG logic.
-- `ingest_themealdb.py`: Web scraper & ingestion script.
-- `generate_synthetic_recipes.py`: AI-powered recipe generator using LiteLLM.
-- `inspect_db.py`: CLI debugging tool for the vector DB.
-- `src/App.jsx`: The interactive React chat & recipe viewer.
-- `chroma_db/`: Directory where your vector data is stored.
+*Built for healthy living, powered by AI.*
