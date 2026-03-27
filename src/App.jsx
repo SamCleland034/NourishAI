@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -75,6 +75,25 @@ const css = `
 
   .calendar-btn { background: #4285F4; color: white; border: none; padding: 10px 20px; border-radius: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
   .calendar-btn:hover { background: #357ae8; }
+  .grocery-list { list-style: none; padding: 0; margin: 0; }
+  .grocery-item { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid #1c301c; }
+  .grocery-item:last-child { border-bottom: none; }
+  .grocery-item span { font-size: 16px; color: #e0d8c8; }
+  .prep-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 16px; border: 1px solid #1c301c; border-radius: 12px; overflow: hidden; }
+  .prep-table th { background: #1c301c; color: #6ec86e; text-align: left; padding: 16px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .prep-table td { padding: 16px; border-bottom: 1px solid #1c301c; font-size: 14px; vertical-align: top; }
+  .prep-table tr:last-child td { border-bottom: none; }
+  .step-col { width: 60px; font-weight: 700; color: #6ec86e; text-align: center; }
+  .meal-col { width: 150px; font-weight: 600; color: #4a7a4a; font-size: 12px; }
+  .task-col { color: #e0d8c8; line-height: 1.5; }
+  .tip-col { font-style: italic; color: #6ec86e; font-size: 12px; background: rgba(110, 200, 110, 0.05); }
+
+  /* Nutrition */
+  .nutrition-summary { margin-top: 12px; padding: 12px; background: #1c301c; border-radius: 12px; font-size: 11px; color: #e0d8c8; }
+  .nutrition-stat { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .nutrition-label { color: #4a7a4a; font-weight: 600; }
+  .nutrition-value { color: #6ec86e; font-weight: 700; }
+  .weekly-summary-card { background: #0f180f; border: 1px solid #1c301c; border-radius: 24px; padding: 24px; margin-top: 32px; }
 `;
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -95,7 +114,7 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState('home');
   const [chatHistory, setChatHistory] = useState([
     { role: 'assistant', content: "Hello! I'm NourishAI, your personal healthy eating companion. How can I help you with your meal planning today?" }
   ]);
@@ -113,6 +132,13 @@ export default function App() {
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [plannerPromptInput, setPlannerPromptInput] = useState('');
   const [isRecurringApplied, setIsRecurringApplied] = useState(false);
+  const [groceryList, setGroceryList] = useState([]);
+  const [isGroceryLoading, setIsGroceryLoading] = useState(false);
+  const [showPrepModal, setShowPrepModal] = useState(false);
+  const [prepGuide, setPrepGuide] = useState([]); // Changed to array
+  const [isPrepLoading, setIsPrepLoading] = useState(false);
+  const [dailyStats, setDailyStats] = useState({});
+  const [weeklyStats, setWeeklyStats] = useState({});
 
   const weekId = getWeekID(currentWeek);
 
@@ -124,7 +150,7 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (user && activeTab === 'planner') {
+    if (user && (activeTab === 'planner' || activeTab === 'home')) {
       fetchSchedule();
       fetchRecommendations();
     }
@@ -210,14 +236,59 @@ export default function App() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/schedule/${user.user_id}/${weekId}`);
       const data = await res.json();
+      console.log("DEBUG: Fetched Schedule Data:", data);
       setWeeklySchedule(data.schedule || {});
       setIsRecurringApplied(data.is_recurring_applied || false);
+      setDailyStats(data.daily_stats || {});
+      setWeeklyStats(data.weekly_stats || {});
       if (data.recipes) {
         setAllFetchedRecipes(prev => ({ ...prev, ...data.recipes }));
       }
     } catch {
       setWeeklySchedule({});
     }
+  };
+
+  const fetchGroceryList = async () => {
+    // Check if there are any recipes in the schedule
+    const hasRecipes = Object.values(weeklySchedule).some(day => day && Object.values(day).some(rid => rid));
+    if (!hasRecipes) {
+      alert("Please add some recipes to your planner first!");
+      return;
+    }
+
+    setIsGroceryLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/grocery-list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id, week_id: weekId, schedule: weeklySchedule })
+      });
+      const data = await res.json();
+      setGroceryList(data.grocery_list || []);
+    } catch { alert("Failed to fetch grocery list."); }
+    finally { setIsGroceryLoading(false); }
+  };
+
+  const fetchPrepGuide = async () => {
+    const hasRecipes = Object.values(weeklySchedule).some(day => day && Object.values(day).some(rid => rid));
+    if (!hasRecipes) {
+      alert("Please add some recipes to your planner first!");
+      return;
+    }
+
+    setIsPrepLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/meal-prep-guide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id, week_id: weekId, schedule: weeklySchedule })
+      });
+      const data = await res.json();
+      setPrepGuide(data.guide || []); // Ensure array
+      setShowPrepModal(true);
+    } catch { alert("Failed to fetch prep guide."); }
+    finally { setIsPrepLoading(false); }
   };
 
   const handlePlannerPrompt = async () => {
@@ -227,11 +298,16 @@ export default function App() {
       const res = await fetch(`${BACKEND_URL}/api/planner/prompt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: plannerPromptInput })
+        body: JSON.stringify({ 
+          message: plannerPromptInput,
+          exclude_ids: Object.keys(allFetchedRecipes)
+        })
       });
       const data = await res.json();
       if (data.suggested_plan) {
         setWeeklySchedule(data.suggested_plan);
+        setDailyStats(data.daily_stats || {});
+        setWeeklyStats(data.weekly_stats || {});
         if (data.recipes) {
           setAllFetchedRecipes(prev => {
             const next = { ...prev };
@@ -255,6 +331,8 @@ export default function App() {
       });
       const data = await res.json();
       setWeeklySchedule(data.schedule);
+      setDailyStats(data.daily_stats || {});
+      setWeeklyStats(data.weekly_stats || {});
       if (data.recipes) {
         setAllFetchedRecipes(prev => ({ ...prev, ...data.recipes }));
       }
@@ -301,8 +379,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message: msg, 
-          history: chatHistory.slice(-5),
-          num_recipes: parseInt(numRecipes)
+          history: chatHistory.slice(-5).map(h => ({ role: h.role, content: h.content })),
+          num_recipes: parseInt(numRecipes),
+          exclude_ids: Object.keys(allFetchedRecipes)
         })
       });
       const data = await res.json();
@@ -437,7 +516,7 @@ export default function App() {
             <span style={{color:'#6ec86e', fontSize:'12px', fontWeight:'700'}}>✓ Calendar Connected</span>
           )}
           <div className="tab-bar">
-            {['chat', 'planner', 'favorites'].map(t => (
+            {['home', 'chat', 'planner', 'favorites'].map(t => (
               <button key={t} onClick={() => setActiveTab(t)} className={`tab-btn ${activeTab === t ? 'active' : ''}`}>
                 {t.toUpperCase()}
               </button>
@@ -448,6 +527,59 @@ export default function App() {
       </nav>
 
       <main className="main">
+        {activeTab === 'home' && (
+          <div style={{animation: 'fadeIn 0.5s ease-in'}}>
+            <div style={{marginBottom: '40px'}}>
+              <h1 style={{color:'#6ec86e', fontSize: '32px', marginBottom: '8px'}}>Welcome back, {user.username}!</h1>
+              <p style={{color:'#4a7a4a', fontSize: '18px'}}>Ready to plan your next healthy meal?</p>
+            </div>
+
+            <section style={{marginBottom: '48px'}}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
+                <h2 style={{color:'#6ec86e', margin:0}}>Recommended for You</h2>
+                <button className="tab-btn" onClick={() => fetchRecommendations()} style={{fontSize: '12px'}}>Refresh Suggestions</button>
+              </div>
+              <div className="recipe-grid">
+                {recommendations.length > 0 ? recommendations.map(r => (
+                  <div key={r.id} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
+                    <img 
+                      src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
+                      className="card-img" 
+                      onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
+                    />
+                    <div className="card-body">
+                      <p className="card-title">{r.name}</p>
+                      <div className="card-meta"><span>{r.cuisine} • {r.category}</span></div>
+                    </div>
+                  </div>
+                )) : <p style={{color:'#4a7a4a'}}>Favorite some recipes to get personalized recommendations!</p>}
+              </div>
+            </section>
+
+            <section>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
+                <h2 style={{color:'#6ec86e', margin:0}}>Your Favorites</h2>
+                <button className="tab-btn" onClick={() => setActiveTab('favorites')} style={{fontSize: '12px'}}>View All</button>
+              </div>
+              <div className="recipe-grid">
+                {favorites.length > 0 ? favorites.slice(0, 4).map(r => (
+                  <div key={r.id} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
+                    <img 
+                      src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
+                      className="card-img" 
+                      onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
+                    />
+                    <div className="card-body">
+                      <p className="card-title">{r.name}</p>
+                      <div className="card-meta"><span>{r.cuisine} • {r.category}</span></div>
+                    </div>
+                  </div>
+                )) : <p style={{color:'#4a7a4a'}}>You haven't added any favorites yet.</p>}
+              </div>
+            </section>
+          </div>
+        )}
+
         {activeTab === 'chat' && (
           <div className="chat-box">
             <div className="chat-messages">
@@ -550,6 +682,84 @@ export default function App() {
                   })}
                 </React.Fragment>
               ))}
+              
+              {/* Daily Nutritional Totals Row */}
+              <div className="grid-time" style={{fontSize: '10px', textTransform: 'uppercase', color: '#6ec86e'}}>Totals</div>
+              {DAYS.map(d => {
+                const stats = dailyStats[d] || {calories: 0, protein: 0, carbs: 0, fat: 0};
+                return (
+                  <div key={d} className="nutrition-summary" style={{margin: 0, borderRadius: 0, borderTop: '1px solid #000'}}>
+                    <div className="nutrition-stat">
+                      <span className="nutrition-value" style={{fontSize: '12px'}}>{Math.round(stats.calories)}</span>
+                      <span style={{fontSize: '9px', opacity: 0.7}}>kcal</span>
+                    </div>
+                    <div style={{display:'flex', gap:'4px', fontSize:'9px', color:'#4a7a4a', justifyContent:'center'}}>
+                      <span>P:{Math.round(stats.protein)}g</span>
+                      <span>C:{Math.round(stats.carbs)}g</span>
+                      <span>F:{Math.round(stats.fat)}g</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {weeklyStats && weeklyStats.calories > 0 && (
+              <div className="weekly-summary-card">
+                <h3 style={{color:'#6ec86e', margin:0, marginBottom: '16px'}}>Weekly Nutritional Profile</h3>
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px'}}>
+                   <div style={{background: '#080d08', padding: '16px', borderRadius: '16px', border: '1px solid #1c301c', textAlign: 'center'}}>
+                      <div style={{fontSize: '12px', color: '#4a7a4a', marginBottom: '4px'}}>Total Calories</div>
+                      <div style={{fontSize: '24px', fontWeight: '800', color: '#6ec86e'}}>{Math.round(weeklyStats.calories)} <span style={{fontSize:'12px'}}>kcal</span></div>
+                   </div>
+                   <div style={{background: '#080d08', padding: '16px', borderRadius: '16px', border: '1px solid #1c301c', textAlign: 'center'}}>
+                      <div style={{fontSize: '12px', color: '#4a7a4a', marginBottom: '4px'}}>Total Protein</div>
+                      <div style={{fontSize: '24px', fontWeight: '800', color: '#6ec86e'}}>{Math.round(weeklyStats.protein)} <span style={{fontSize:'12px'}}>g</span></div>
+                   </div>
+                   <div style={{background: '#080d08', padding: '16px', borderRadius: '16px', border: '1px solid #1c301c', textAlign: 'center'}}>
+                      <div style={{fontSize: '12px', color: '#4a7a4a', marginBottom: '4px'}}>Total Carbs</div>
+                      <div style={{fontSize: '24px', fontWeight: '800', color: '#6ec86e'}}>{Math.round(weeklyStats.carbs)} <span style={{fontSize:'12px'}}>g</span></div>
+                   </div>
+                   <div style={{background: '#080d08', padding: '16px', borderRadius: '16px', border: '1px solid #1c301c', textAlign: 'center'}}>
+                      <div style={{fontSize: '12px', color: '#4a7a4a', marginBottom: '4px'}}>Total Fat</div>
+                      <div style={{fontSize: '24px', fontWeight: '800', color: '#6ec86e'}}>{Math.round(weeklyStats.fat)} <span style={{fontSize:'12px'}}>g</span></div>
+                   </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{marginTop: '48px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px'}}>
+              <div style={{background: '#0f180f', padding: '32px', borderRadius: '24px', border: '1px solid #1c301c'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
+                  <h3 style={{color:'#6ec86e', margin:0}}>Grocery List</h3>
+                  <button className="apply-plan-btn" style={{marginTop:0}} onClick={fetchGroceryList} disabled={isGroceryLoading}>
+                    {isGroceryLoading ? 'Consolidating...' : '🛒 Generate'}
+                  </button>
+                </div>
+                {groceryList.length > 0 ? (
+                  <ul className="grocery-list">
+                    {groceryList.map((item, i) => (
+                      <li key={i} className="grocery-item">
+                        <input type="checkbox" style={{width:'20px', height:'20px', accentColor:'#2a6a2a'}} />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p style={{textAlign:'center', color:'#4a7a4a'}}>Click generate to consolidate ingredients!</p>
+                )}
+              </div>
+
+              <div style={{background: '#0f180f', padding: '32px', borderRadius: '24px', border: '1px solid #1c301c'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
+                  <h3 style={{color:'#6ec86e', margin:0}}>Meal Prep Guide</h3>
+                  <button className="apply-plan-btn" style={{marginTop:0, background:'#4285F4'}} onClick={fetchPrepGuide} disabled={isPrepLoading}>
+                    {isPrepLoading ? 'Analyzing...' : '🔪 Generate Prep Guide'}
+                  </button>
+                </div>
+                <p style={{textAlign:'center', color:'#4a7a4a', marginTop: '20px', fontSize: '14px'}}>
+                  Your consolidated prep plan will appear in a popup for easy reading.
+                </p>
+              </div>
             </div>
 
             <div style={{marginTop:'40px'}}>
@@ -588,6 +798,65 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {showPrepModal && (
+        <div className="modal-overlay" onClick={() => setShowPrepModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth: '700px'}}>
+            <button className="close-modal" onClick={() => setShowPrepModal(false)}>✕</button>
+            <div className="modal-content">
+              <div style={{display:'flex', alignItems:'center', gap:'12px', marginBottom:'24px'}}>
+                <span style={{fontSize:'32px'}}>🔪</span>
+                <h2 style={{color:'#6ec86e', margin:0}}>Your Weekly Meal Prep Guide</h2>
+              </div>
+              <div style={{
+                color: '#e0d8c8', 
+                fontSize: '15px', 
+                lineHeight: '1.8',
+                background: '#080d08',
+                padding: '24px',
+                borderRadius: '16px',
+                border: '1px solid #1c301c'
+              }}>
+                <div className="prep-guide-content">
+                  {Array.isArray(prepGuide) && prepGuide.length > 0 ? (
+                    <table className="prep-table">
+                      <thead>
+                        <tr>
+                          <th className="step-col">Step</th>
+                          <th className="task-col">Task</th>
+                          <th className="meal-col">Related Meal(s)</th>
+                          <th className="tip-col">Efficiency Tip</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prepGuide.map((item, idx) => (
+                          <tr key={idx}>
+                            <td className="step-col">{item.step || idx + 1}</td>
+                            <td className="task-col">{item.task}</td>
+                            <td className="meal-col">{item.meal_name}</td>
+                            <td className="tip-col">{item.efficiency_tip}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : typeof prepGuide === 'string' && prepGuide.length > 0 ? (
+                    <div style={{whiteSpace: 'pre-wrap', padding: '16px'}}>{prepGuide}</div>
+                  ) : (
+                    <p style={{textAlign:'center', color:'#4a7a4a'}}>No structured steps generated. Try adding more recipes to your week!</p>
+                  )}
+                </div>
+              </div>
+              <button 
+                className="fav-btn add" 
+                style={{width:'100%', marginTop:'24px'}} 
+                onClick={() => setShowPrepModal(false)}
+              >
+                Got it, Chef!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedRecipe && (
         <div className="modal-overlay" onClick={() => setSelectedRecipe(null)}>

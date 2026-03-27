@@ -6,12 +6,46 @@ import chromadb
 from chromadb.utils import embedding_functions
 import litellm
 import argparse
+import httpx
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def generate_llm_recipe(model="gpt-4o-mini"):
+# STATIC CONFIG
+IMAGES_DIR = os.path.join("static", "recipe_images")
+os.makedirs(IMAGES_DIR, exist_ok=True)
+
+def download_image_sync(rid, url, retries=2):
+    """Sync download with retries and proxy support."""
+    if not url: return None
+    ext = url.split('.')[-1] if '.' in url else 'jpg'
+    if len(ext) > 4: ext = 'jpg'
+    filename = f"{rid}.{ext}"
+    local_path = os.path.join(IMAGES_DIR, filename)
+
+    if os.path.exists(local_path):
+        return filename
+
+    with httpx.Client(trust_env=True, timeout=10.0) as client_http:
+        for attempt in range(retries + 1):
+            try:
+                logger.info(f"Downloading image locally: {url} (Attempt {attempt+1})")
+                with client_http.stream("GET", url, follow_redirects=True) as response:
+                    if response.status_code == 200:
+                        with open(local_path, 'wb') as f:
+                            for chunk in response.iter_bytes():
+                                f.write(chunk)
+                        return filename
+                break
+            except Exception as e:
+                if attempt == retries:
+                    logger.error(f"Failed to download {url} after {retries+1} attempts: {e}")
+                else:
+                    time.sleep(1)
+    return None
+
+def generate_llm_recipe(model="gemini/gemini-2.0-flash"):
     """Generates a creative recipe using LiteLLM (supports OpenAI, Anthropic, Gemini, etc.)."""
     
     prompt = """
@@ -88,17 +122,21 @@ def ingest_to_chroma(meal):
         "image": meal.get('strMealThumb', '')
     }
     
+    recipe_id = str(uuid.uuid4())
+    img_url = meal.get('strMealThumb', '')
+    download_image_sync(recipe_id, img_url)
+
     collection.add(
         documents=[document],
         metadatas=[metadata],
-        ids=[str(uuid.uuid4())]
+        ids=[recipe_id]
     )
     logger.info(f"Successfully Ingested: {meal['strMeal']} ({meal['strArea']})")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate synthetic recipes using LiteLLM (Multi-Provider)")
     parser.add_argument("--count", type=int, default=1, help="Number of recipes to generate")
-    parser.add_argument("--model", type=str, default="gpt-4o-mini", 
+    parser.add_argument("--model", type=str, default="gemini/gemini-2.0-flash", 
                         help="Model to use (e.g., 'gpt-4o', 'anthropic/claude-3-5-sonnet-20240620', 'gemini/gemini-1.5-pro')")
     parser.add_argument("--save-json", action="store_true", help="Save to JSON file instead of DB")
     
