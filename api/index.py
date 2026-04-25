@@ -308,7 +308,8 @@ def calculate_schedule_stats(schedule, recipe_map):
     return daily_stats, weekly_stats
 
 app = FastAPI(title="NourishAI Backend")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+if not IS_VERCEL:
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # SESSION MIDDLEWARE
 app.add_middleware(SessionMiddleware, secret_key="nourish-ai-secret-key-change-this")
