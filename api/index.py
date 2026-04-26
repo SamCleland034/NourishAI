@@ -18,11 +18,11 @@ import httpx
 import shutil
 
 from pinecone import Pinecone, ServerlessSpec
-from supabase import create_client, Client
+import aiohttp
+import aiosqlite
 import litellm
 from openai import OpenAI
 from dotenv import load_dotenv
-import google.generativeai as genai
 
 load_dotenv()
 
@@ -117,6 +117,12 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "recipes")
 
+# DB_MODE: auto-detect (supabase if both keys present, sqlite otherwise), or force via DB_MODE=sqlite|supabase
+DB_MODE = os.getenv("DB_MODE", "supabase" if (os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_KEY")) else "sqlite")
+USE_SQLITE = DB_MODE == "sqlite"
+SQLITE_PATH = os.path.join(DATA_DIR, "nourish.db")
+_JSON_COLS = {"recipe_data", "schedule_json"}
+
 # OpenAI config for embeddings (1536 dims)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 oa_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -126,25 +132,149 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 if not os.getenv("GEMINI_API_KEY") and os.getenv("GOOGLE_API_KEY"):
     os.environ["GEMINI_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
+if not USE_SQLITE and (not SUPABASE_URL or not SUPABASE_KEY):
     logger.error("SUPABASE_URL or SUPABASE_KEY missing!")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
+async def _sqlite_init():
+    async with aiosqlite.connect(SQLITE_PATH) as db:
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS favorites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                recipe_id TEXT NOT NULL,
+                recipe_data TEXT NOT NULL,
+                UNIQUE(user_id, recipe_id)
+            );
+            CREATE TABLE IF NOT EXISTS schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                week_id TEXT NOT NULL,
+                schedule_json TEXT NOT NULL,
+                UNIQUE(user_id, week_id)
+            );
+            CREATE TABLE IF NOT EXISTS google_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                token_json TEXT NOT NULL
+            );
+        """)
+        await db.commit()
+
+def _deserialize_row(row: dict) -> dict:
+    for col in _JSON_COLS:
+        if col in row and isinstance(row[col], str):
+            try:
+                row[col] = json.loads(row[col])
+            except Exception:
+                pass
+    return row
+
+async def _sqlite_select(table: str, cols: str, **filters) -> list:
+    sql = f"SELECT {cols} FROM {table}"
+    values = list(filters.values())
+    if filters:
+        sql += " WHERE " + " AND ".join(f"{k} = ?" for k in filters)
+    async with aiosqlite.connect(SQLITE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(sql, values) as cursor:
+            rows = await cursor.fetchall()
+            return [_deserialize_row(dict(row)) for row in rows]
+
+async def _sqlite_insert(table: str, data: dict) -> list:
+    serialized = {k: json.dumps(v) if k in _JSON_COLS and isinstance(v, (dict, list)) else v for k, v in data.items()}
+    cols_str = ", ".join(serialized.keys())
+    placeholders = ", ".join("?" for _ in serialized)
+    sql = f"INSERT INTO {table} ({cols_str}) VALUES ({placeholders})"
+    async with aiosqlite.connect(SQLITE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(sql, list(serialized.values()))
+        await db.commit()
+        row_id = cursor.lastrowid
+        async with db.execute(f"SELECT * FROM {table} WHERE id = ?", [row_id]) as c:
+            row = await c.fetchone()
+            return [_deserialize_row(dict(row))] if row else []
+
+async def _sqlite_upsert(table: str, data: dict, on_conflict: str = None) -> None:
+    serialized = {k: json.dumps(v) if k in _JSON_COLS and isinstance(v, (dict, list)) else v for k, v in data.items()}
+    cols_str = ", ".join(serialized.keys())
+    placeholders = ", ".join("?" for _ in serialized)
+    if on_conflict:
+        conflict_cols = [c.strip() for c in on_conflict.replace(" ", "").split(",")]
+        update_cols = [k for k in serialized if k not in conflict_cols]
+        if update_cols:
+            update_clause = ", ".join(f"{c} = excluded.{c}" for c in update_cols)
+            sql = f"INSERT INTO {table} ({cols_str}) VALUES ({placeholders}) ON CONFLICT({','.join(conflict_cols)}) DO UPDATE SET {update_clause}"
+        else:
+            sql = f"INSERT OR REPLACE INTO {table} ({cols_str}) VALUES ({placeholders})"
+    else:
+        sql = f"INSERT OR REPLACE INTO {table} ({cols_str}) VALUES ({placeholders})"
+    async with aiosqlite.connect(SQLITE_PATH) as db:
+        await db.execute(sql, list(serialized.values()))
+        await db.commit()
+
+async def _sqlite_delete(table: str, **filters) -> None:
+    sql = f"DELETE FROM {table} WHERE " + " AND ".join(f"{k} = ?" for k in filters)
+    async with aiosqlite.connect(SQLITE_PATH) as db:
+        await db.execute(sql, list(filters.values()))
+        await db.commit()
+
+def _sb_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+async def sb_select(table: str, cols: str, **filters) -> list:
+    if USE_SQLITE:
+        return await _sqlite_select(table, cols, **filters)
+    params = {"select": cols, **{k: f"eq.{v}" for k, v in filters.items()}}
+    async with aiohttp.ClientSession() as s:
+        async with s.get(f"{SUPABASE_URL}/rest/v1/{table}", headers=_sb_headers(), params=params) as r:
+            return await r.json() if r.status == 200 else []
+
+async def sb_insert(table: str, data: dict) -> list:
+    if USE_SQLITE:
+        return await _sqlite_insert(table, data)
+    headers = {**_sb_headers(), "Prefer": "return=representation"}
+    async with aiohttp.ClientSession() as s:
+        async with s.post(f"{SUPABASE_URL}/rest/v1/{table}", headers=headers, json=data) as r:
+            result = await r.json() if r.status in (200, 201) else []
+            return result if isinstance(result, list) else [result]
+
+async def sb_upsert(table: str, data: dict, on_conflict: str = None) -> None:
+    if USE_SQLITE:
+        return await _sqlite_upsert(table, data, on_conflict)
+    headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates"}
+    params = {"on_conflict": on_conflict.replace(" ", "")} if on_conflict else {}
+    async with aiohttp.ClientSession() as s:
+        async with s.post(f"{SUPABASE_URL}/rest/v1/{table}", headers=headers, json=data, params=params) as r:
+            pass
+
+async def sb_delete(table: str, **filters) -> None:
+    if USE_SQLITE:
+        return await _sqlite_delete(table, **filters)
+    params = {k: f"eq.{v}" for k, v in filters.items()}
+    async with aiohttp.ClientSession() as s:
+        async with s.delete(f"{SUPABASE_URL}/rest/v1/{table}", headers=_sb_headers(), params=params) as r:
+            pass
 pc = Pinecone(api_key=PINECONE_API_KEY) if PINECONE_API_KEY else None
 
-# --- DB Helper (Legacy compatibility wrapped around Supabase) ---
-def init_db():
-    # In Supabase, tables are usually created via dashboard or migrations.
-    # We'll assume they exist for now or provide a SQL snippet in documentation.
-    logger.info("Supabase client initialized.")
-
-init_db()
+logger.info(f"Database mode: {DB_MODE}" + (f" ({SQLITE_PATH})" if USE_SQLITE else ""))
 
 def ensure_supabase_image(rid, url, retries=2):
     """Downloads external images and uploads to Supabase Storage to ensure persistence."""
     if not url or "placehold.co" in url or "via.placeholder" in url:
         return url
-    if not supabase:
+    if IS_VERCEL:
+        return url  # Images already in Supabase storage; skip sync upload in serverless
+    if not SUPABASE_URL:
         return url
 
     # Check if image already exists in Supabase to avoid re-uploading
@@ -167,12 +297,9 @@ def ensure_supabase_image(rid, url, retries=2):
         with httpx.Client(follow_redirects=True, timeout=10.0) as client:
             resp = client.get(url)
             if resp.status_code == 200:
-                # Upload to Supabase 'recipe-images' bucket
-                supabase.storage.from_("recipe-images").upload(
-                    path=filename,
-                    file=resp.content,
-                    file_options={"content-type": f"image/{ext}"}
-                )
+                upload_url = f"{SUPABASE_URL}/storage/v1/object/recipe-images/{filename}"
+                upload_headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": f"image/{ext}"}
+                client.post(upload_url, content=resp.content, headers=upload_headers)
                 return supabase_public_url
     except Exception as e:
         # If it fails because it already exists, that's fine
@@ -324,9 +451,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    if USE_SQLITE:
+        await _sqlite_init()
+        logger.info(f"SQLite initialized at {SQLITE_PATH}")
+
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "version": "v1.1-persistence-fix", "timestamp": time.time()}
+    return {"status": "ok", "db": DB_MODE, "timestamp": time.time()}
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
@@ -417,43 +550,40 @@ async def google_callback(request: Request):
         flow = Flow.from_client_secrets_file(CLIENT_SECRET_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI, state=state)
         flow.code_verifier = code_verifier
         flow.fetch_token(authorization_response=str(request.url))
-        
-        supabase.table("google_tokens").upsert({"user_id": user_id, "token_json": flow.credentials.to_json()}).execute()
+        await sb_upsert("google_tokens", {"user_id": user_id, "token_json": flow.credentials.to_json()})
         return HTMLResponse("<h1>Success!</h1><script>setTimeout(()=>window.close(), 1500);</script>")
     except Exception as e:
         return HTMLResponse(f"<h1>Error</h1><p>{str(e)}</p>")
 
 @app.get("/api/google/status/{user_id}")
-def get_google_status(user_id: int):
+async def get_google_status(user_id: int):
     try:
-        res = supabase.table("google_tokens").select("user_id").eq("user_id", user_id).execute()
-        return {"connected": len(res.data) > 0}
+        data = await sb_select("google_tokens", "user_id", user_id=user_id)
+        return {"connected": len(data) > 0}
     except Exception as e:
         logger.error(f"Google status error: {e}")
         return {"connected": False}
 
 @app.post("/api/google/export")
-def export_to_calendar(req: ScheduleRequest):
+async def export_to_calendar(req: ScheduleRequest):
     try:
-        res = supabase.table("google_tokens").select("token_json").eq("user_id", req.user_id).execute()
-        if not res.data: raise HTTPException(status_code=401, detail="Not connected")
-        row = res.data
-        
-        creds = Credentials.from_authorized_user_info(json.loads(row[0]["token_json"]), SCOPES)
+        tokens = await sb_select("google_tokens", "token_json", user_id=req.user_id)
+        if not tokens: raise HTTPException(status_code=401, detail="Not connected")
+
+        creds = Credentials.from_authorized_user_info(json.loads(tokens[0]["token_json"]), SCOPES)
         if creds.expired and creds.refresh_token:
             creds.refresh(GoogleRequest())
-            supabase.table("google_tokens").upsert({"user_id": req.user_id, "token_json": creds.to_json()}).execute()
+            await sb_upsert("google_tokens", {"user_id": req.user_id, "token_json": creds.to_json()})
 
         service = build('calendar', 'v3', credentials=creds)
         year, week = map(int, req.week_id.split("-W"))
-        # Robust Sunday calculation
         start_date = datetime.datetime.strptime(f'{year}-W{week}-0', "%Y-W%W-%w").date()
-        
+
         day_offsets = {"Sun": 0, "Mon": 1, "Tue": 2, "Wed": 3, "Thu": 4, "Fri": 5, "Sat": 6}
         meal_times = {"Breakfast": "08:00:00", "Lunch": "12:00:00", "Dinner": "19:00:00"}
 
-        res_favs = supabase.table("favorites").select("recipe_id, recipe_data").eq("user_id", req.user_id).execute()
-        fav_map = {r["recipe_id"]: r["recipe_data"] for r in res_favs.data} if res_favs.data else {}
+        favs = await sb_select("favorites", "recipe_id,recipe_data", user_id=req.user_id)
+        fav_map = {r["recipe_id"]: r["recipe_data"] for r in favs}
 
         events_created = 0
         for day, meals in req.schedule.items():
@@ -487,42 +617,41 @@ def export_to_calendar(req: ScheduleRequest):
         logger.error(f"Export crash: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 @app.post("/api/auth/signup")
-def signup(req: AuthRequest):
+async def signup(req: AuthRequest):
     try:
-        res = supabase.table("users").insert({"username": req.username, "password_hash": hash_password(req.password)}).execute()
-        if res.data:
-            return {"user_id": res.data[0]["id"], "username": req.username}
+        data = await sb_insert("users", {"username": req.username, "password_hash": hash_password(req.password)})
+        if data:
+            return {"user_id": data[0]["id"], "username": req.username}
         raise HTTPException(status_code=400, detail="Signup failed")
     except Exception as e:
         logger.error(f"Signup error: {e}")
         raise HTTPException(status_code=400, detail=f"Signup failed: {str(e)}")
 
 @app.post("/api/auth/login")
-def login(req: AuthRequest):
-    res = supabase.table("users").select("id, username").eq("username", req.username).eq("password_hash", hash_password(req.password)).execute()
-    if res.data:
-        return {"user_id": res.data[0]["id"], "username": res.data[0]["username"]}
+async def login(req: AuthRequest):
+    data = await sb_select("users", "id,username", username=req.username, password_hash=hash_password(req.password))
+    if data:
+        return {"user_id": data[0]["id"], "username": data[0]["username"]}
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.post("/api/favorites")
-def add_favorite(req: FavoriteRequest):
+async def add_favorite(req: FavoriteRequest):
     # Map 'recipe' to 'recipe_data' for Supabase
     rid = req.recipe.get("id")
-    data = {"user_id": req.user_id, "recipe_id": rid, "recipe_data": req.recipe}
-    supabase.table("favorites").upsert(data, on_conflict="user_id, recipe_id").execute()
+    await sb_upsert("favorites", {"user_id": req.user_id, "recipe_id": rid, "recipe_data": req.recipe}, on_conflict="user_id,recipe_id")
     return {"status": "ok"}
 
 @app.post("/api/favorites/remove")
-def remove_favorite(req: FavoriteRequest):
+async def remove_favorite(req: FavoriteRequest):
     rid = req.recipe.get("id")
-    supabase.table("favorites").delete().eq("user_id", req.user_id).eq("recipe_id", rid).execute()
+    await sb_delete("favorites", user_id=req.user_id, recipe_id=rid)
     return {"status": "ok"}
 
 @app.get("/api/favorites/{user_id}")
-def get_favorites(user_id: int):
+async def get_favorites(user_id: int):
     try:
-        res = supabase.table("favorites").select("recipe_data").eq("user_id", user_id).execute()
-        recipes = [r["recipe_data"] for r in res.data] if res.data else []
+        rows = await sb_select("favorites", "recipe_data", user_id=user_id)
+        recipes = [r["recipe_data"] for r in rows]
     except Exception as e:
         logger.error(f"Favorites fetch error: {e}")
         recipes = []
@@ -543,23 +672,20 @@ def get_favorites(user_id: int):
     return {"recipes": repaired}
 
 @app.post("/api/schedule")
-def save_schedule(req: ScheduleRequest):
-    data = {"user_id": req.user_id, "week_id": req.week_id, "schedule_json": req.schedule}
-    supabase.table("schedules").upsert(data, on_conflict="user_id, week_id").execute()
+async def save_schedule(req: ScheduleRequest):
+    await sb_upsert("schedules", {"user_id": req.user_id, "week_id": req.week_id, "schedule_json": req.schedule}, on_conflict="user_id,week_id")
     return {"status": "ok"}
 
 @app.get("/api/schedule/{user_id}/{week_id}")
-def get_schedule(user_id: int, week_id: str):
-    # Try specific week first
-    res = supabase.table("schedules").select("schedule_json").eq("user_id", user_id).eq("week_id", week_id).execute()
-    
-    # Fallback to recurring if not found
+async def get_schedule(user_id: int, week_id: str):
+    rows = await sb_select("schedules", "schedule_json", user_id=user_id, week_id=week_id)
+
     is_recurring_applied = False
-    if not res.data:
-        res = supabase.table("schedules").select("schedule_json").eq("user_id", user_id).eq("week_id", "recurring").execute()
-        if res.data: is_recurring_applied = True
+    if not rows:
+        rows = await sb_select("schedules", "schedule_json", user_id=user_id, week_id="recurring")
+        if rows: is_recurring_applied = True
     
-    schedule = res.data[0]["schedule_json"] if res.data else {}
+    schedule = rows[0]["schedule_json"] if rows else {}
     
     recipe_ids = set()
     for day in schedule.values():
@@ -590,12 +716,13 @@ def get_schedule(user_id: int, week_id: str):
 
 class UserOnlyRequest(BaseModel):
     user_id: int
+    week_id: Optional[str] = None
 
 @app.post("/api/planner/autofill")
-def autofill_planner(req: UserOnlyRequest):
+async def autofill_planner(req: UserOnlyRequest):
     # Logic: Get favorites to find preferences, then query DB for 21 diverse recipes
-    res_favs = supabase.table("favorites").select("recipe_data").eq("user_id", req.user_id).execute()
-    favs = [r["recipe_data"] for r in res_favs.data] if res_favs.data else []
+    rows = await sb_select("favorites", "recipe_data", user_id=req.user_id)
+    favs = [r["recipe_data"] for r in rows]
     
     # Build a query from favorites
     q = " ".join({r.get("category","")+" "+r.get("cuisine","") for r in favs}).strip() or "healthy delicious recipes"
@@ -650,11 +777,7 @@ def autofill_planner(req: UserOnlyRequest):
     try:
         if req.user_id and req.week_id:
             logger.info(f"Saving generated plan for user {req.user_id} week {req.week_id}")
-            supabase.table("schedules").upsert({
-                "user_id": req.user_id,
-                "week_id": req.week_id,
-                "schedule_json": new_schedule
-            }, on_conflict="user_id, week_id").execute()
+            await sb_upsert("schedules", {"user_id": req.user_id, "week_id": req.week_id, "schedule_json": new_schedule}, on_conflict="user_id,week_id")
     except Exception as e:
         logger.error(f"Failed to auto-save plan: {e}")
 
@@ -666,7 +789,7 @@ def autofill_planner(req: UserOnlyRequest):
     }
 
 @app.post("/api/planner/prompt")
-def planner_prompt(req: ChatRequest):
+async def planner_prompt(req: ChatRequest):
     # Similar to chat but specialized for arrangement
     recs = []
     ctx = ""
@@ -765,11 +888,7 @@ def planner_prompt(req: ChatRequest):
         # PERSISTENCE
         try:
             if req.user_id and req.week_id:
-                supabase.table("schedules").upsert({
-                    "user_id": req.user_id,
-                    "week_id": req.week_id,
-                    "schedule_json": plan
-                }, on_conflict="user_id, week_id").execute()
+                await sb_upsert("schedules", {"user_id": req.user_id, "week_id": req.week_id, "schedule_json": plan}, on_conflict="user_id,week_id")
         except Exception as e:
             logger.error(f"Persistence Error: {e}")
             # Don't fail the whole request for persistence, just log
@@ -804,9 +923,9 @@ def search_recipes(req: SearchRequest):
 import random
 
 @app.get("/api/recommendations/{user_id}")
-def get_recommendations(user_id: int):
-    res_favs = supabase.table("favorites").select("recipe_id, recipe_data").eq("user_id", user_id).execute()
-    favs = [r["recipe_data"] for r in res_favs.data] if res_favs.data else []
+async def get_recommendations(user_id: int):
+    rows = await sb_select("favorites", "recipe_id,recipe_data", user_id=user_id)
+    favs = [r["recipe_data"] for r in rows]
     q = " ".join({r.get("category","")+" "+r.get("cuisine","") for r in favs}).strip() or "healthy"
     
     fav_ids = [r.get("id") for r in favs]
@@ -828,7 +947,7 @@ def get_recommendations(user_id: int):
     return {"recipes": out}
 
 @app.post("/api/chat")
-def chat(req: ChatRequest):
+async def chat(req: ChatRequest):
     recs = []
     ctx = ""
     try:
@@ -938,12 +1057,12 @@ def chat(req: ChatRequest):
 
     
 @app.post("/api/grocery-list")
-def get_grocery_list(req: GroceryRequest):
+async def get_grocery_list(req: GroceryRequest):
     schedule = req.schedule
     if not schedule:
-        res = supabase.table("schedules").select("schedule_json").eq("user_id", req.user_id).eq("week_id", req.week_id).execute()
-        if not res.data: return {"grocery_list": {}}
-        schedule = res.data[0]["schedule_json"]
+        rows = await sb_select("schedules", "schedule_json", user_id=req.user_id, week_id=req.week_id)
+        if not rows: return {"grocery_list": {}}
+        schedule = rows[0]["schedule_json"]
     
     recipe_ids = []
     for day in schedule.values():
@@ -1015,12 +1134,12 @@ def get_grocery_list(req: GroceryRequest):
         return {"grocery_list": {"General": unique_ings}}
 
 @app.post("/api/meal-prep-guide")
-def get_meal_prep_guide(req: GroceryRequest):
+async def get_meal_prep_guide(req: GroceryRequest):
     schedule = req.schedule
     if not schedule:
-        res = supabase.table("schedules").select("schedule_json").eq("user_id", req.user_id).eq("week_id", req.week_id).execute()
-        if not res.data: return {"guide": "No schedule found."}
-        schedule = res.data[0]["schedule_json"]
+        rows = await sb_select("schedules", "schedule_json", user_id=req.user_id, week_id=req.week_id)
+        if not rows: return {"guide": "No schedule found."}
+        schedule = rows[0]["schedule_json"]
 
     recipe_ids = []
     for day in schedule.values():

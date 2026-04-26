@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const BACKEND_URL = import.meta.env.VITE_API_URL || ""; // Proxy handles this in dev
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -94,6 +94,20 @@ const css = `
   .nutrition-label { color: #4a7a4a; font-weight: 600; }
   .nutrition-value { color: #6ec86e; font-weight: 700; }
   .weekly-summary-card { background: #0f180f; border: 1px solid #1c301c; border-radius: 24px; padding: 24px; margin-top: 32px; }
+
+  /* Spinner */
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .btn-content { display: flex; align-items: center; justify-content: center; gap: 8px; }
 `;
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -132,15 +146,59 @@ export default function App() {
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [plannerPromptInput, setPlannerPromptInput] = useState('');
   const [isRecurringApplied, setIsRecurringApplied] = useState(false);
-  const [groceryList, setGroceryList] = useState([]);
+  const [groceryList, setGroceryList] = useState({});
+  const [unitSystem, setUnitSystem] = useState('imperial');
   const [isGroceryLoading, setIsGroceryLoading] = useState(false);
   const [showPrepModal, setShowPrepModal] = useState(false);
-  const [prepGuide, setPrepGuide] = useState([]); // Changed to array
+  const [prepGuide, setPrepGuide] = useState([]);
+  const [prepGuideChecked, setPrepGuideChecked] = useState({}); // Added state
   const [isPrepLoading, setIsPrepLoading] = useState(false);
   const [dailyStats, setDailyStats] = useState({});
   const [weeklyStats, setWeeklyStats] = useState({});
+  const [manualSearchQuery, setManualSearchQuery] = useState('');
+  const [manualSearchResults, setManualSearchResults] = useState([]);
+  const [isManualSearchLoading, setIsManualSearchLoading] = useState(false);
+  const [isRefreshingRecs, setIsRefreshingRecs] = useState(false);
+  const [modalServings, setModalServings] = useState(4);
 
   const weekId = getWeekID(currentWeek);
+
+  const scaleQuantity = (qty, factor) => {
+    if (!qty) return '';
+    // Match numbers, fractions, or decimals at the start of the string
+    // This regex handles "1", "1/2", "1.5", "1 1/2"
+    const match = qty.match(/^(\d+\s+)?(\d+\/\d+|\d+(\.\d+)?)/);
+    if (!match) return qty;
+
+    const numStr = match[0];
+    const rest = qty.slice(numStr.length);
+
+    const parseValue = (s) => {
+      s = s.trim();
+      if (s.includes('/')) {
+        const [n, d] = s.split('/').map(Number);
+        return n / d;
+      }
+      return Number(s);
+    };
+
+    let value = 0;
+    if (numStr.trim().includes(' ') && numStr.includes('/')) {
+        const parts = numStr.trim().split(/\s+/);
+        value = Number(parts[0]) + parseValue(parts[1]);
+    } else {
+        value = parseValue(numStr);
+    }
+
+    const scaledValue = value * factor;
+    
+    // Format back - if it's very close to an integer, show as integer
+    const formatted = Number.isInteger(scaledValue * 4) ? 
+      (scaledValue % 1 === 0 ? scaledValue : scaledValue.toFixed(2).replace(/\.?0+$/, '')) : 
+      scaledValue.toFixed(2).replace(/\.?0+$/, '');
+
+    return `${formatted}${rest}`;
+  };
 
   useEffect(() => {
     if (user) {
@@ -152,9 +210,14 @@ export default function App() {
   useEffect(() => {
     if (user && (activeTab === 'planner' || activeTab === 'home')) {
       fetchSchedule();
-      fetchRecommendations();
     }
   }, [user, activeTab, weekId]);
+
+  useEffect(() => {
+    if (user && recommendations.length === 0) {
+      fetchRecommendations();
+    }
+  }, [user]);
 
   const handleAuth = async () => {
     if (!username || !password) return alert("Fill in all fields");
@@ -169,7 +232,10 @@ export default function App() {
       if (res.ok) {
         setUser(data);
       } else alert(data.detail || "Auth failed");
-    } catch { alert("Backend offline."); }
+    } catch (e) { 
+      console.error("Auth Error:", e);
+      alert("Connectivity issue. Please ensure the backend is running at " + BACKEND_URL); 
+    }
   };
 
   const checkGoogleStatus = async () => {
@@ -249,6 +315,31 @@ export default function App() {
     }
   };
 
+  const handleManualSearch = async () => {
+    if (!manualSearchQuery.trim()) return;
+    setIsManualSearchLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/recipes/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: manualSearchQuery, limit: 12 })
+      });
+      const data = await res.json();
+      setManualSearchResults(data.recipes || []);
+      if (data.recipes) {
+        setAllFetchedRecipes(prev => {
+          const next = { ...prev };
+          data.recipes.forEach(r => { if (r && r.id) next[r.id] = r; });
+          return next;
+        });
+      }
+    } catch (e) {
+      alert("Search failed: " + e.message);
+    } finally {
+      setIsManualSearchLoading(false);
+    }
+  };
+
   const fetchGroceryList = async () => {
     // Check if there are any recipes in the schedule
     const hasRecipes = Object.values(weeklySchedule).some(day => day && Object.values(day).some(rid => rid));
@@ -262,10 +353,15 @@ export default function App() {
       const res = await fetch(`${BACKEND_URL}/api/grocery-list`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.user_id, week_id: weekId, schedule: weeklySchedule })
+        body: JSON.stringify({ 
+          user_id: user.user_id, 
+          week_id: weekId, 
+          schedule: weeklySchedule,
+          unit_system: unitSystem 
+        })
       });
       const data = await res.json();
-      setGroceryList(data.grocery_list || []);
+      setGroceryList(data.grocery_list || {});
     } catch { alert("Failed to fetch grocery list."); }
     finally { setIsGroceryLoading(false); }
   };
@@ -300,25 +396,49 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message: plannerPromptInput,
-          exclude_ids: Object.keys(allFetchedRecipes)
+          exclude_ids: Object.keys(allFetchedRecipes),
+          user_id: user.user_id,
+          week_id: weekId,
+          current_schedule: weeklySchedule // Send current state
         })
       });
-      const data = await res.json();
+      
+      if (res.status === 429) {
+        alert("AI Rate Limit Reached (Gemini). Please wait 60 seconds and try again.");
+        return;
+      }
+      
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text || "Server returned non-JSON error");
+      }
+
+      if (!res.ok) throw new Error(data?.detail || "Server error");
+
       if (data.suggested_plan) {
+        // AI now returns the MERGED plan from the backend
         setWeeklySchedule(data.suggested_plan);
         setDailyStats(data.daily_stats || {});
         setWeeklyStats(data.weekly_stats || {});
         if (data.recipes) {
           setAllFetchedRecipes(prev => {
             const next = { ...prev };
-            data.recipes.forEach(r => next[r.id] = r);
+            data.recipes.forEach(r => { if(r && r.id) next[r.id] = r; });
             return next;
           });
         }
         setPlannerPromptInput('');
-      } else alert("AI couldn't generate a plan. Try a different prompt.");
-    } catch { alert("Error generating plan."); }
-    finally { setLoading(false); }
+      } else {
+        alert("AI couldn't generate a plan. Try a different prompt.");
+      }
+    } catch (e) {
+      alert("Error generating plan: " + e.message);
+      console.error("PLANNER ERROR:", e);
+    } finally { setLoading(false); }
   };
 
   const autoFillPlanner = async () => {
@@ -327,16 +447,25 @@ export default function App() {
       const res = await fetch(`${BACKEND_URL}/api/planner/autofill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.user_id })
+        body: JSON.stringify({ user_id: user.user_id, week_id: weekId })
       });
       const data = await res.json();
-      setWeeklySchedule(data.schedule);
+      if (!res.ok) throw new Error(data.detail || "Autofill failed");
+      
+      setWeeklySchedule(data.schedule || {});
       setDailyStats(data.daily_stats || {});
       setWeeklyStats(data.weekly_stats || {});
-      if (data.recipes) {
-        setAllFetchedRecipes(prev => ({ ...prev, ...data.recipes }));
+      if (data.recipes && Array.isArray(data.recipes)) {
+        setAllFetchedRecipes(prev => {
+          const next = { ...prev };
+          data.recipes.forEach(r => { if (r && r.id) next[r.id] = r; });
+          return next;
+        });
       }
-    } catch { alert("Error auto-filling."); }
+    } catch (e) { 
+      alert("Auto-fill error: " + e.message);
+      console.error("AUTOFILL ERROR:", e);
+    }
     finally { setLoading(false); }
   };
 
@@ -354,16 +483,39 @@ export default function App() {
 
   const fetchRecommendations = async () => {
     if (!user) return;
+    setIsRefreshingRecs(true);
+    
+    const fallbackRecs = [
+      { id: 'mock-1', name: 'Mediterranean Quinoa Bowl', cuisine: 'Mediterranean', category: 'Lunch', image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=500&q=80', ingredients: [{item: 'Quinoa'}, {item:'Cherry Tomatoes'}, {item:'Cucumber'}, {item:'Feta Cheese'}], instructions: 'Mix all ingredients together with a light lemon dressing.' },
+      { id: 'mock-2', name: 'Grilled Lemon Herb Chicken', cuisine: 'American', category: 'Dinner', image: 'https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?w=500&q=80', ingredients: [{item: 'Chicken Breast'}, {item:'Lemon'}, {item:'Herbs'}], instructions: 'Marinate chicken in lemon and herbs, then grill until cooked through.' },
+      { id: 'mock-3', name: 'Avocado Berry Smoothie', cuisine: 'Healthy', category: 'Breakfast', image: 'https://images.unsplash.com/photo-1628557044797-f21a177c37ec?w=500&q=80', ingredients: [{item: 'Avocado'}, {item:'Mixed Berries'}, {item:'Almond Milk'}], instructions: 'Blend all ingredients until smooth.' }
+    ];
+
     try {
       const res = await fetch(`${BACKEND_URL}/api/recommendations/${user.user_id}`);
       const data = await res.json();
-      setRecommendations(data.recipes || []);
+      
+      let recs = data.recipes || [];
+      if (recs.length === 0) {
+        recs = fallbackRecs;
+      }
+
+      setRecommendations(recs);
       setAllFetchedRecipes(prev => {
         const next = { ...prev };
-        (data.recipes || []).forEach(r => next[r.id] = r);
+        recs.forEach(r => next[r.id] = r);
         return next;
       });
-    } catch {}
+    } catch {
+      setRecommendations(fallbackRecs);
+      setAllFetchedRecipes(prev => {
+        const next = { ...prev };
+        fallbackRecs.forEach(r => next[r.id] = r);
+        return next;
+      });
+    } finally {
+      setIsRefreshingRecs(false);
+    }
   };
 
   const handleChat = async () => {
@@ -381,7 +533,8 @@ export default function App() {
           message: msg, 
           history: chatHistory.slice(-5).map(h => ({ role: h.role, content: h.content })),
           num_recipes: parseInt(numRecipes),
-          exclude_ids: Object.keys(allFetchedRecipes)
+          exclude_ids: Object.keys(allFetchedRecipes),
+          current_schedule: weeklySchedule // Pass for context
         })
       });
       const data = await res.json();
@@ -396,7 +549,9 @@ export default function App() {
         role: 'assistant', 
         content: data.message, 
         recipes: data.recipes,
-        suggested_plan: data.suggested_plan
+        suggested_plan: data.suggested_plan,
+        daily_stats: data.daily_stats,
+        weekly_stats: data.weekly_stats
       }]);
     } catch {
       setChatHistory(prev => [...prev, { role: 'assistant', content: "Error connecting to backend." }]);
@@ -405,8 +560,10 @@ export default function App() {
     }
   };
 
-  const applyPlan = async (plan) => {
+  const applyPlan = async (plan, dailyStats, weeklyStats) => {
     setWeeklySchedule(plan);
+    if (dailyStats) setDailyStats(dailyStats);
+    if (weeklyStats) setWeeklyStats(weeklyStats);
     try {
       const res = await fetch(`${BACKEND_URL}/api/schedule`, {
         method: 'POST',
@@ -432,8 +589,12 @@ export default function App() {
   };
 
   const addToPlanner = (recipe) => {
-    if (!isSelectingFor) return;
+    if (!isSelectingFor) {
+      console.log("addToPlanner called but isSelectingFor is null");
+      return;
+    }
     const { day, meal } = isSelectingFor;
+    console.log(`Adding ${recipe.name} to ${day} ${meal}`);
     setWeeklySchedule(prev => ({
       ...prev,
       [day]: {
@@ -444,6 +605,7 @@ export default function App() {
     setAllFetchedRecipes(prev => ({ ...prev, [recipe.id]: recipe }));
     setIsSelectingFor(null);
     setSelectedRecipe(null);
+    alert(`Added ${recipe.name} to your plan for ${day}! Remember to 'Save Changes' if you're done.`);
   };
 
   const changeWeek = (offset) => {
@@ -516,7 +678,7 @@ export default function App() {
             <span style={{color:'#6ec86e', fontSize:'12px', fontWeight:'700'}}>✓ Calendar Connected</span>
           )}
           <div className="tab-bar">
-            {['home', 'chat', 'planner', 'favorites'].map(t => (
+            {['home', 'planner', 'favorites'].map(t => (
               <button key={t} onClick={() => setActiveTab(t)} className={`tab-btn ${activeTab === t ? 'active' : ''}`}>
                 {t.toUpperCase()}
               </button>
@@ -528,98 +690,123 @@ export default function App() {
 
       <main className="main">
         {activeTab === 'home' && (
-          <div style={{animation: 'fadeIn 0.5s ease-in'}}>
-            <div style={{marginBottom: '40px'}}>
-              <h1 style={{color:'#6ec86e', fontSize: '32px', marginBottom: '8px'}}>Welcome back, {user.username}!</h1>
-              <p style={{color:'#4a7a4a', fontSize: '18px'}}>Ready to plan your next healthy meal?</p>
-            </div>
+          <div style={{animation: 'fadeIn 0.5s ease-in', display: 'grid', gridTemplateColumns: '1fr 400px', gap: '32px'}}>
+            <div className="home-dashboard">
+              <div style={{marginBottom: '40px'}}>
+                <h1 style={{color:'#6ec86e', fontSize: '36px', marginBottom: '8px', fontWeight: 800}}>Dashboard</h1>
+                <p style={{color:'#4a7a4a', fontSize: '18px'}}>Your nutritional journey, consolidated.</p>
+              </div>
 
-            <section style={{marginBottom: '48px'}}>
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
-                <h2 style={{color:'#6ec86e', margin:0}}>Recommended for You</h2>
-                <button className="tab-btn" onClick={() => fetchRecommendations()} style={{fontSize: '12px'}}>Refresh Suggestions</button>
-              </div>
-              <div className="recipe-grid">
-                {recommendations.length > 0 ? recommendations.map(r => (
-                  <div key={r.id} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
-                    <img 
-                      src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
-                      className="card-img" 
-                      onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
-                    />
-                    <div className="card-body">
-                      <p className="card-title">{r.name}</p>
-                      <div className="card-meta"><span>{r.cuisine} • {r.category}</span></div>
-                    </div>
-                  </div>
-                )) : <p style={{color:'#4a7a4a'}}>Favorite some recipes to get personalized recommendations!</p>}
-              </div>
-            </section>
-
-            <section>
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
-                <h2 style={{color:'#6ec86e', margin:0}}>Your Favorites</h2>
-                <button className="tab-btn" onClick={() => setActiveTab('favorites')} style={{fontSize: '12px'}}>View All</button>
-              </div>
-              <div className="recipe-grid">
-                {favorites.length > 0 ? favorites.slice(0, 4).map(r => (
-                  <div key={r.id} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
-                    <img 
-                      src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
-                      className="card-img" 
-                      onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
-                    />
-                    <div className="card-body">
-                      <p className="card-title">{r.name}</p>
-                      <div className="card-meta"><span>{r.cuisine} • {r.category}</span></div>
-                    </div>
-                  </div>
-                )) : <p style={{color:'#4a7a4a'}}>You haven't added any favorites yet.</p>}
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'chat' && (
-          <div className="chat-box">
-            <div className="chat-messages">
-              {chatHistory.map((m, i) => (
-                <div key={i} className={m.role === 'user' ? 'user' : 'assistant'} style={{display:'flex', flexDirection:'column'}}>
-                  <div className="bubble">
-                    {m.content}
-                    {m.suggested_plan && (
-                      <button className="apply-plan-btn" onClick={() => applyPlan(m.suggested_plan)}>
-                        📅 Apply this Weekly Plan to my Schedule
-                      </button>
-                    )}
-                  </div>
-                  {m.recipes && (
-                    <div className="recipe-grid">
-                      {m.recipes.map(r => (
-                        <div key={r.id} className="recipe-card" onClick={() => isSelectingFor ? addToPlanner(r) : setSelectedRecipe(r)}>
-                          <img 
-                            src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
-                            className="card-img" 
-                            onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
-                          />
-                          <div className="card-body">
-                            <p className="card-title">{r.name}</p>
-                            <div className="card-meta"><span>{r.cuisine}</span></div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {/* Weekly Preview Section */}
+              <section style={{marginBottom: '48px', background: 'rgba(110, 200, 110, 0.05)', padding: '24px', borderRadius: '24px', border: '1px solid #1c301c'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
+                  <h2 style={{color:'#6ec86e', margin:0, fontSize: '20px', fontWeight: 700}}>Your Weekly Plan</h2>
+                  <button className="tab-btn" onClick={() => setActiveTab('planner')} style={{fontSize: '12px'}}>Full Planner</button>
                 </div>
-              ))}
-              {loading && <div className="assistant"><div className="bubble">...</div></div>}
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px'}}>
+                  {DAYS.map(day => (
+                    <div key={day} style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '10px', color: '#4a7a4a', fontWeight: 'bold', marginBottom: '8px'}}>{day}</div>
+                      <div style={{height: '40px', background: '#080d08', border: '1px solid #1c301c', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px'}}>
+                        {weeklySchedule[day] && Object.values(weeklySchedule[day]).some(v => v) ? '🍽️' : '—'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section style={{marginBottom: '48px'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
+                  <h2 style={{color:'#6ec86e', margin:0, fontSize: '20px', fontWeight: 700}}>Recommended for You</h2>
+                </div>
+                <div className="recipe-grid" style={{gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))'}}>
+                  {recommendations.length > 0 ? recommendations.map(r => (
+                    <div key={r.id} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
+                      <img 
+                        src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
+                        className="card-img" 
+                        onError={(e) => { e.target.src = `https://placehold.co/250x120?text=${encodeURIComponent(r.name || r.title || 'Recipe')}`; }}
+                      />
+                      <div className="card-body">
+                        <p className="card-title">{r.name}</p>
+                        <div className="card-meta"><span>{r.cuisine} • {r.category}</span></div>
+                      </div>
+                    </div>
+                  )) : <p style={{color:'#4a7a4a'}}>Favorite some recipes to get personalized recommendations!</p>}
+                </div>
+              </section>
+
+              <section>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px', borderTop: '1px solid #1c301c', paddingTop: '32px'}}>
+                  <h2 style={{color:'#6ec86e', margin:0, fontSize: '20px', fontWeight: 700}}>Your Favorites</h2>
+                  <button className="tab-btn" onClick={() => setActiveTab('favorites')} style={{fontSize: '12px'}}>View All</button>
+                </div>
+                <div className="recipe-grid" style={{gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))'}}>
+                  {favorites.length > 0 ? favorites.slice(0, 4).map(r => (
+                    <div key={r.id} className="recipe-card" onClick={() => setSelectedRecipe(r)}>
+                      <img 
+                        src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
+                        className="card-img" 
+                        onError={(e) => { e.target.src = `https://placehold.co/250x120?text=${encodeURIComponent(r.name || r.title || 'Recipe')}`; }}
+                      />
+                      <div className="card-body">
+                        <p className="card-title">{r.name}</p>
+                        <div className="card-meta"><span>{r.cuisine} • {r.category}</span></div>
+                      </div>
+                    </div>
+                  )) : <p style={{color:'#4a7a4a'}}>You haven't added any favorites yet.</p>}
+                </div>
+              </section>
             </div>
-            <div className="chat-input-area">
-              <input className="chat-input" placeholder="Ask for a recipe or plan..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleChat()} />
-              <button className="send-btn" onClick={handleChat}>Send</button>
-            </div>
+
+            <aside className="home-chat-sidebar">
+              <div className="chat-box" style={{height: 'calc(100vh - 180px)', position: 'sticky', top: '100px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)'}}>
+                <div style={{padding: '20px', borderBottom: '1px solid #1c301c', background: '#1c301c'}}>
+                  <h3 style={{margin: 0, color: '#6ec86e', fontSize: '16px'}}>AI Assistant</h3>
+                  <p style={{margin: 0, fontSize: '11px', color: '#4a7a4a'}}>Ask for plans or recipes</p>
+                </div>
+                <div className="chat-messages" style={{padding: '20px'}}>
+                  {chatHistory.map((m, i) => (
+                    <div key={i} className={m.role === 'user' ? 'user' : 'assistant'} style={{display:'flex', flexDirection:'column'}}>
+                      <div className="bubble" style={{padding: '12px 16px', fontSize: '14px', borderRadius: '16px'}}>
+                        {m.content}
+                        {m.suggested_plan && (
+                          <button className="apply-plan-btn" onClick={() => applyPlan(m.suggested_plan, m.daily_stats, m.weekly_stats)} style={{fontSize: '12px', padding: '8px 12px'}}>
+                            📅 Apply Weekly Plan
+                          </button>
+                        )}
+                      </div>
+                      {m.recipes && (
+                        <div className="recipe-grid" style={{gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px'}}>
+                          {m.recipes.map(r => (
+                            <div key={r.id} className="recipe-card" onClick={() => isSelectingFor ? addToPlanner(r) : setSelectedRecipe(r)} style={{borderRadius: '8px'}}>
+                              <img 
+                                src={r.image || 'https://placehold.co/100x60?text=No+Image'} 
+                                className="card-img" 
+                                style={{height: '60px'}}
+                                onError={(e) => { e.target.src = 'https://placehold.co/100x60?text=Error'; }}
+                              />
+                              <div className="card-body" style={{padding: '6px'}}>
+                                <p className="card-title" style={{fontSize: '11px'}}>{r.name}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {loading && <div className="assistant"><div className="bubble" style={{padding: '8px 16px', borderRadius: '16px'}}>...</div></div>}
+                </div>
+                <div className="chat-input-area" style={{padding: '16px'}}>
+                  <input className="chat-input" style={{fontSize: '13px'}} placeholder="What's for dinner?" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleChat()} />
+                  <button className="send-btn" onClick={handleChat} style={{padding: '8px 16px', fontSize: '13px'}}>Ask</button>
+                </div>
+              </div>
+            </aside>
           </div>
         )}
+
+
 
         {activeTab === 'planner' && (
           <div>
@@ -652,6 +839,41 @@ export default function App() {
               <button className="tab-btn" onClick={autoFillPlanner} style={{borderColor:'#6ec86e', color:'#6ec86e'}}>🪄 Auto-Fill</button>
               <button className="tab-btn" onClick={setAsRecurring} style={{borderColor:'#4285F4', color:'#4285F4'}}>🔁 Set Recurring</button>
             </div>
+
+            {isSelectingFor && (
+              <div style={{background: '#1c301c', padding: '24px', borderRadius: '24px', border: '1px solid #6ec86e', marginBottom: '24px', animation: 'fadeIn 0.3s ease'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '16px'}}>
+                  <h3 style={{margin:0, color:'#6ec86e'}}>Add Recipe to {isSelectingFor.day} {isSelectingFor.meal}</h3>
+                  <button onClick={() => { setIsSelectingFor(null); setManualSearchResults([]); setManualSearchQuery(''); }} style={{background:'none', border:'none', color:'#4a7a4a', cursor:'pointer', fontSize: '18px'}}>✕</button>
+                </div>
+                <div style={{display:'flex', gap: '12px', marginBottom: '16px'}}>
+                  <input 
+                    className="chat-input" 
+                    placeholder="Search recipes (e.g. 'salmon', 'pasta')..." 
+                    value={manualSearchQuery}
+                    onChange={e => setManualSearchQuery(e.target.value)}
+                    onKeyPress={e => e.key === 'Enter' && handleManualSearch()}
+                  />
+                  <button className="send-btn" onClick={handleManualSearch} disabled={isManualSearchLoading}>
+                    {isManualSearchLoading ? 'Searching...' : 'Search'}
+                  </button>
+                </div>
+                {manualSearchResults.length > 0 ? (
+                  <div className="recipe-grid" style={{gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px'}}>
+                    {manualSearchResults.map(r => (
+                      <div key={r.id} className="recipe-card" onClick={() => { addToPlanner(r); setIsSelectingFor(null); setManualSearchResults([]); setManualSearchQuery(''); }} style={{borderStyle: 'dashed'}}>
+                        <img src={r.image} className="card-img" style={{height:'80px'}} />
+                        <div className="card-body" style={{padding: '8px'}}>
+                          <p className="card-title" style={{fontSize:'12px', marginBottom: 0}}>{r.name}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : manualSearchQuery && !isManualSearchLoading && (
+                  <p style={{color: '#4a7a4a', textAlign: 'center', fontSize: '14px'}}>No recipes found. Try a different keyword!</p>
+                )}
+              </div>
+            )}
 
             <div className="planner-grid">
               <div className="grid-header" style={{background:'transparent', border:'none'}}></div>
@@ -731,19 +953,36 @@ export default function App() {
               <div style={{background: '#0f180f', padding: '32px', borderRadius: '24px', border: '1px solid #1c301c'}}>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'24px'}}>
                   <h3 style={{color:'#6ec86e', margin:0}}>Grocery List</h3>
-                  <button className="apply-plan-btn" style={{marginTop:0}} onClick={fetchGroceryList} disabled={isGroceryLoading}>
-                    {isGroceryLoading ? 'Consolidating...' : '🛒 Generate'}
-                  </button>
+                  <div style={{display:'flex', gap:'8px', alignItems:'center'}}>
+                    <select 
+                      value={unitSystem} 
+                      onChange={(e) => setUnitSystem(e.target.value)}
+                      style={{background: '#080d08', color: '#6ec86e', border: '1px solid #1c301c', padding: '4px 8px', borderRadius: '8px', fontSize: '12px'}}
+                    >
+                      <option value="imperial">Imperial</option>
+                      <option value="metric">Metric</option>
+                    </select>
+                    <button className="apply-plan-btn" style={{marginTop:0}} onClick={fetchGroceryList} disabled={isGroceryLoading}>
+                      {isGroceryLoading ? 'Consolidating...' : '🛒 Generate'}
+                    </button>
+                  </div>
                 </div>
-                {groceryList.length > 0 ? (
-                  <ul className="grocery-list">
-                    {groceryList.map((item, i) => (
-                      <li key={i} className="grocery-item">
-                        <input type="checkbox" style={{width:'20px', height:'20px', accentColor:'#2a6a2a'}} />
-                        <span>{item}</span>
-                      </li>
+                {Object.keys(groceryList).length > 0 ? (
+                  <div className="grocery-categories">
+                    {Object.entries(groceryList).map(([category, items]) => (
+                      <div key={category} style={{marginBottom: '24px'}}>
+                        <h4 style={{color: '#4a7a4a', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px', borderBottom: '1px solid #1c301c', paddingBottom: '4px'}}>{category}</h4>
+                        <ul className="grocery-list">
+                          {Array.isArray(items) && items.map((item, i) => (
+                            <li key={i} className="grocery-item">
+                              <input type="checkbox" style={{width:'20px', height:'20px', accentColor:'#2a6a2a'}} />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 ) : (
                   <p style={{textAlign:'center', color:'#4a7a4a'}}>Click generate to consolidate ingredients!</p>
                 )}
@@ -770,7 +1009,7 @@ export default function App() {
                     <img 
                       src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
                       className="card-img" 
-                      onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
+                      onError={(e) => { e.target.src = `https://placehold.co/250x120?text=${encodeURIComponent(r.name || r.title || 'Recipe')}`; }}
                     />
                     <div className="card-body"><p className="card-title">{r.name}</p></div>
                   </div>
@@ -789,7 +1028,7 @@ export default function App() {
                   <img 
                     src={r.image || 'https://placehold.co/250x120?text=No+Image'} 
                     className="card-img" 
-                    onError={(e) => { e.target.src = 'https://placehold.co/250x120?text=Error'; }}
+                    onError={(e) => { e.target.src = `https://placehold.co/250x120?text=${encodeURIComponent(r.name || r.title || 'Recipe')}`; }}
                   />
                   <div className="card-body"><p className="card-title">{r.name}</p></div>
                 </div>
@@ -822,6 +1061,7 @@ export default function App() {
                     <table className="prep-table">
                       <thead>
                         <tr>
+                          <th style={{width: '40px'}}></th>
                           <th className="step-col">Step</th>
                           <th className="task-col">Task</th>
                           <th className="meal-col">Related Meal(s)</th>
@@ -829,14 +1069,25 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {prepGuide.map((item, idx) => (
-                          <tr key={idx}>
-                            <td className="step-col">{item.step || idx + 1}</td>
-                            <td className="task-col">{item.task}</td>
-                            <td className="meal-col">{item.meal_name}</td>
-                            <td className="tip-col">{item.efficiency_tip}</td>
-                          </tr>
-                        ))}
+                        {prepGuide.map((item, idx) => {
+                          const isChecked = prepGuideChecked[idx] || false;
+                          return (
+                            <tr key={idx} style={{ opacity: isChecked ? 0.5 : 1 }}>
+                              <td style={{ verticalAlign: 'middle', textAlign: 'center' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={isChecked}
+                                  onChange={() => setPrepGuideChecked(prev => ({ ...prev, [idx]: !isChecked }))}
+                                  style={{ width: '18px', height: '18px', accentColor: '#6ec86e', cursor: 'pointer' }}
+                                />
+                              </td>
+                              <td className="step-col" style={{ textDecoration: isChecked ? 'line-through' : 'none' }}>{item.step || idx + 1}</td>
+                              <td className="task-col" style={{ textDecoration: isChecked ? 'line-through' : 'none' }}>{item.task}</td>
+                              <td className="meal-col">{item.meal_name}</td>
+                              <td className="tip-col">{item.efficiency_tip}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   ) : typeof prepGuide === 'string' && prepGuide.length > 0 ? (
@@ -873,12 +1124,49 @@ export default function App() {
               )}
               <h2 style={{color:'#6ec86e', marginTop: selectedRecipe.image ? '0' : '24px'}}>{selectedRecipe.name}</h2>
               <p style={{color:'#4a7a4a'}}>{selectedRecipe.cuisine} • {selectedRecipe.category}</p>
-              <button className={`fav-btn ${isFav(selectedRecipe.id) ? 'remove' : 'add'}`} onClick={() => toggleFavorite(selectedRecipe)}>
-                {isFav(selectedRecipe.id) ? '✕ Remove' : '❤ Favorite'}
-              </button>
-              <div style={{marginTop:'24px', display:'grid', gridTemplateColumns:'1fr 2fr', gap:'32px'}}>
-                <div><h3>Ingredients</h3><ul>{(selectedRecipe.ingredients || []).map((ing, i) => <li key={i}>{ing.item || ing}</li>)}</ul></div>
-                <div><h3>Instructions</h3><p style={{whiteSpace:'pre-wrap'}}>{selectedRecipe.instructions}</p></div>
+              
+              <div style={{marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', background: '#080d08', padding: '12px 20px', borderRadius: '12px', border: '1px solid #1c301c'}}>
+                 <label style={{fontSize: '14px', color: '#6ec86e', fontWeight: 700, minWidth: '100px'}}>Servings: {modalServings}</label>
+                 <input type="range" min="1" max="12" value={modalServings} onChange={(e) => setModalServings(parseInt(e.target.value))} style={{accentColor: '#6ec86e', flex: 1, cursor: 'pointer'}} />
+              </div>
+
+              <div style={{display: 'flex', gap: '12px', marginTop: '16px'}}>
+                <button className={`fav-btn ${isFav(selectedRecipe.id) ? 'remove' : 'add'}`} onClick={() => toggleFavorite(selectedRecipe)} style={{marginTop: 0, flex: 1}}>
+                  {isFav(selectedRecipe.id) ? '✕ Remove Favorite' : '❤ Add to Favorites'}
+                </button>
+                {isSelectingFor && (
+                  <button className="fav-btn add" onClick={() => addToPlanner(selectedRecipe)} style={{marginTop: 0, flex: 1, background: '#4285F4'}}>
+                    📅 Add to Planner
+                  </button>
+                )}
+              </div>
+
+              {selectedRecipe.nutrition && (
+                <div style={{marginTop: '24px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', background: 'rgba(110, 200, 110, 0.05)', padding: '16px', borderRadius: '16px', border: '1px solid #1c301c'}}>
+                   <div style={{textAlign:'center'}}><div style={{fontSize:'10px', color:'#4a7a4a', fontWeight: 'bold', marginBottom: '4px'}}>CALORIES</div><div style={{color:'#6ec86e', fontWeight:700, fontSize: '18px'}}>{Math.round((selectedRecipe.nutrition.calories || 0) * (modalServings / 4))}</div></div>
+                   <div style={{textAlign:'center'}}><div style={{fontSize:'10px', color:'#4a7a4a', fontWeight: 'bold', marginBottom: '4px'}}>PROTEIN</div><div style={{color:'#6ec86e', fontWeight:700, fontSize: '18px'}}>{Math.round((selectedRecipe.nutrition.protein || 0) * (modalServings / 4))}g</div></div>
+                   <div style={{textAlign:'center'}}><div style={{fontSize:'10px', color:'#4a7a4a', fontWeight: 'bold', marginBottom: '4px'}}>CARBS</div><div style={{color:'#6ec86e', fontWeight:700, fontSize: '18px'}}>{Math.round((selectedRecipe.nutrition.carbs || 0) * (modalServings / 4))}g</div></div>
+                   <div style={{textAlign:'center'}}><div style={{fontSize:'10px', color:'#4a7a4a', fontWeight: 'bold', marginBottom: '4px'}}>FAT</div><div style={{color:'#6ec86e', fontWeight:700, fontSize: '18px'}}>{Math.round((selectedRecipe.nutrition.fat || 0) * (modalServings / 4))}g</div></div>
+                </div>
+              )}
+
+              <div style={{marginTop:'24px', display:'grid', gridTemplateColumns:'1fr 2fr', gap:'40px'}}>
+                <div>
+                  <h3 style={{color: '#6ec86e', borderBottom: '1px solid #1c301c', paddingBottom: '8px'}}>Ingredients</h3>
+                  <ul style={{listStyle: 'none', padding: 0}}>
+                    {(selectedRecipe.ingredients || []).map((ing, i) => (
+                      <li key={i} style={{padding: '8px 0', borderBottom: '1px solid rgba(28, 48, 28, 0.5)', fontSize: '14px'}}>
+                        <span style={{fontWeight: 700, color: '#6ec86e'}}>
+                          {typeof ing === 'object' ? scaleQuantity(ing.qty, modalServings / 4) : ing}
+                        </span> {typeof ing === 'object' ? ing.item : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3 style={{color: '#6ec86e', borderBottom: '1px solid #1c301c', paddingBottom: '8px'}}>Instructions</h3>
+                  <p style={{whiteSpace:'pre-wrap', lineHeight: '1.6', fontSize: '15px'}}>{selectedRecipe.instructions}</p>
+                </div>
               </div>
             </div>
           </div>

@@ -20,7 +20,10 @@ os.makedirs(IMAGES_DIR, exist_ok=True)
 
 # Initialize ChromaDB client (local persistent vector database)
 client = chromadb.PersistentClient(path="./chroma_db")
-emb_fn = embedding_functions.DefaultEmbeddingFunction()
+emb_fn = embedding_functions.OpenAIEmbeddingFunction(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    model_name="text-embedding-3-small"
+)
 
 collection = client.get_or_create_collection(
     name="recipes",
@@ -116,9 +119,16 @@ def process_meal(meal):
         if not meta.get("image") and meal.get("strMealThumb"):
             logger.info(f"Updating {title} - adding missing image.")
             img_url = meal.get("strMealThumb")
-            download_image_sync(rid, img_url)
-            updates["image"] = img_url
+            filename = download_image_sync(rid, img_url)
+            updates["image"] = filename if filename else img_url
             needs_update = True
+        elif meta.get("image") and meta.get("image").startswith("http"):
+            # Migration: convert external URL to local path if already downloaded
+            logger.info(f"Migrating {title} to local image path if possible.")
+            filename = download_image_sync(rid, meta.get("image"))
+            if filename:
+                updates["image"] = filename
+                needs_update = True
         
         # Check if we need nutrition
         nutri_str = meta.get("nutrition")
@@ -158,6 +168,10 @@ def process_meal(meal):
     logger.info(f"Estimating nutrition for brand new recipe: {title}")
     nut = estimate_nutrition(title, ingredients)
     
+    recipe_id = str(uuid.uuid4())
+    img_url = meal.get("strMealThumb", "")
+    filename = download_image_sync(recipe_id, img_url)
+    
     metadata = {
         "title": title,
         "category": category,
@@ -166,13 +180,9 @@ def process_meal(meal):
         "ingredients": json.dumps(ingredients),
         "instructions": instructions,
         "source": source_id,
-        "image": meal.get("strMealThumb", ""),
+        "image": filename if filename else img_url,
         "nutrition": json.dumps(nut)
     }
-    
-    recipe_id = str(uuid.uuid4())
-    img_url = meal.get("strMealThumb", "")
-    download_image_sync(recipe_id, img_url)
 
     collection.add(
         documents=[document],

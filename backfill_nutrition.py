@@ -17,8 +17,15 @@ DEFAULT_MODEL = "gemini/gemini-2.0-flash"
 # Initialize ChromaDB
 CHROMA_PATH = os.path.join(DATA_DIR, "chroma_db")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
-emb_fn = embedding_functions.DefaultEmbeddingFunction()
-collection = client.get_or_create_collection(name="recipes", embedding_function=emb_fn)
+try:
+    collection = client.get_collection(name="recipes")
+except Exception as e:
+    # If it doesn't exist, we probably shouldn't be backfilling anyway, but let's be robust
+    emb_fn = embedding_functions.OpenAIEmbeddingFunction(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model_name="text-embedding-3-small"
+    )
+    collection = client.get_or_create_collection(name="recipes", embedding_function=emb_fn)
 
 def estimate_multiple_nutrition(recipes_list):
     """Estimate Calories, Protein, Carbs, Fat for multiple recipes in ONE LLM call."""
@@ -44,7 +51,7 @@ def estimate_multiple_nutrition(recipes_list):
     try:
         response = litellm.completion(
             model=DEFAULT_MODEL,
-            messages=[{"role": "system", "content": "You are a professional dietitian JSON API."},
+            messages=[{"role": "system", "content": "You are a professional dietitian JSON API. You MUST return a single JSON object where each key is a recipe ID and each value is an object with nutrition stats."},
                       {"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
@@ -57,9 +64,34 @@ def estimate_multiple_nutrition(recipes_list):
         elif "```" in content:
             content = content.split("```")[1].strip()
             
-        results = json.loads(content) or {}
-        # Ensure all keys are strings (in case the LLM returned integers for ID-like strings)
-        processed_results = {str(k): v for k, v in results.items()}
+        raw_res = json.loads(content) or {}
+        
+        # Handle cases where LLM returns a list of single-key objects instead of one object
+        results = {}
+        if isinstance(raw_res, list):
+            for item in raw_res:
+                if isinstance(item, dict):
+                    results.update(item)
+        elif isinstance(raw_res, dict):
+            # Sometimes models return {"recipes": {...}} or similar
+            if "recipes" in raw_res and isinstance(raw_res["recipes"], dict):
+                results = raw_res["recipes"]
+            else:
+                results = raw_res
+
+        # Final normalization: ensure keys are strings and values are numeric
+        processed_results = {}
+        for k, v in results.items():
+            if isinstance(v, dict):
+                try:
+                    processed_results[str(k)] = {
+                        "calories": float(v.get("calories", 0)),
+                        "protein": float(v.get("protein", 0)),
+                        "carbs": float(v.get("carbs", 0)),
+                        "fat": float(v.get("fat", 0))
+                    }
+                except: continue
+        
         logger.info(f"Received nutrition results for {len(processed_results)} recipes in this batch.")
         return processed_results
     except Exception as e:

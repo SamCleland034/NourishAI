@@ -25,24 +25,134 @@ NourishAI is an intelligent, RAG-powered (Retrieval-Augmented Generation) meal p
 
 ## 🛠️ Technical Stack
 
-*   **Frontend:** React (Vite), Tailwind-inspired Vanilla CSS for a premium dark-mode aesthetic.
-*   **Backend:** FastAPI (Python).
-*   **Database:** SQLite (Users/Schedules/Favorites) + ChromaDB (Vector store for RAG).
-*   **AI/LLM:** LiteLLM (supporting GPT-4o-mini and others) for chat and arrangement logic.
-*   **Data Ingestion:** Custom scripts for TheMealDB API and synthetic recipe generation.
+| Layer | Technology |
+|---|---|
+| **Frontend** | React 18 + Vite, Vanilla CSS (dark-mode) |
+| **Backend** | FastAPI (Python), served as Vercel Serverless Functions |
+| **Vector Store** | Pinecone (RAG recipe search) |
+| **Relational DB** | SQLite (local dev) or Supabase Postgres (production) |
+| **AI / LLM** | LiteLLM → Gemini 2.0 Flash (chat, planner, grocery) |
+| **Embeddings** | OpenAI `text-embedding-3-small` (1536 dims) |
+| **Auth** | SHA-256 hashed passwords; Google OAuth 2.0 for Calendar |
 
-## 🏃 Getting Started
+## ⚙️ Environment Variables
 
-1.  **Backend:**
-    ```bash
-    uvicorn nourish_backend:app --reload
-    ```
-2.  **Frontend:**
-    ```bash
-    npm run dev
-    ```
-3.  **Database Setup (Optional):**
-    Run `python ingest_themealdb.py` to populate your local vector store.
+Copy `.env.cloud.example` to `.env` and fill in the values you need.
+
+| Variable | Required | Description |
+|---|---|---|
+| `GEMINI_API_KEY` | Yes | Google AI Studio key for LiteLLM |
+| `OPENAI_API_KEY` | Yes | Used for recipe embeddings |
+| `PINECONE_API_KEY` | Yes | Pinecone vector store |
+| `PINECONE_INDEX_NAME` | No | Defaults to `recipes` |
+| `DB_MODE` | No | `sqlite` or `supabase` (auto-detected) |
+| `SUPABASE_URL` | Supabase only | Project URL from Supabase dashboard |
+| `SUPABASE_KEY` | Supabase only | Anon/public key from Supabase dashboard |
+| `REDIRECT_URI` | Google Cal | OAuth callback URL |
+| `FRONTEND_URL` | No | Allowed CORS origin (default: `http://localhost:5173`) |
+
+## 🏃 Local Development
+
+### 1. Install dependencies
+
+```bash
+# Python backend
+pip install -r api/requirements.txt
+
+# React frontend
+npm install
+```
+
+### 2. Configure environment
+
+```bash
+cp .env.cloud.example .env
+# Edit .env — at minimum set GEMINI_API_KEY, OPENAI_API_KEY, PINECONE_API_KEY
+```
+
+If `SUPABASE_URL` and `SUPABASE_KEY` are absent, the backend automatically uses **SQLite** (`nourish.db` in the project root). No database setup is required.
+
+To force a specific mode:
+```bash
+DB_MODE=sqlite    # always use local SQLite
+DB_MODE=supabase  # always use Supabase (requires keys)
+```
+
+### 3. Start the backend
+
+```bash
+python -m uvicorn api.index:app --reload --port 8000
+```
+
+### 4. Start the frontend
+
+```bash
+npm run dev
+```
+
+The app will be available at `http://localhost:5173`. The frontend proxies `/api/*` requests to the backend via Vite's dev server config.
+
+### 5. Populate the recipe database (first time only)
+
+```bash
+# Ingest TheMealDB recipes into Pinecone
+python ingest_themealdb.py
+
+# (Optional) Generate and add synthetic recipes
+python generate_synthetic_recipes.py
+
+# (Optional) Backfill nutrition data for existing recipes
+python backfill_nutrition.py
+```
+
+## 🚢 Deploying to Vercel
+
+1. Push to GitHub.
+2. Import the repo in [Vercel](https://vercel.com) — it auto-detects the Vite framework.
+3. Set all environment variables in **Vercel → Project → Settings → Environment Variables** (see table above). Include both `SUPABASE_URL` and `SUPABASE_KEY` — their presence automatically switches the backend to Supabase mode.
+4. Deploy. The `vercel.json` routing config forwards `/api/*` to `api/index.py` and everything else to the React SPA.
+
+### Supabase table setup
+
+Run the following SQL once in your Supabase project's **SQL Editor**:
+
+```sql
+create table users (
+  id serial primary key,
+  username text unique not null,
+  password_hash text not null
+);
+
+create table favorites (
+  id serial primary key,
+  user_id integer not null,
+  recipe_id text not null,
+  recipe_data jsonb not null,
+  unique (user_id, recipe_id)
+);
+
+create table schedules (
+  id serial primary key,
+  user_id integer not null,
+  week_id text not null,
+  schedule_json jsonb not null,
+  unique (user_id, week_id)
+);
+
+create table google_tokens (
+  id serial primary key,
+  user_id integer not null unique,
+  token_json text not null
+);
+```
+
+## 🐳 Docker (optional)
+
+```bash
+docker compose up --build
+```
+
+This starts both the FastAPI backend and the Vite frontend in containers. See `Dockerfile.backend`, `Dockerfile.frontend`, and `docker-compose.yml` for configuration.
 
 ---
 *Built for healthy living, powered by AI.*

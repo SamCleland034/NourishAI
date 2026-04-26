@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/.venv
+      - ./users.db:/app/users.db
+      - ./chroma_db:/app/chroma_db
+      - ./static/recipe_images:/app/static/recipe_images
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    env_file:
+      - .env
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend

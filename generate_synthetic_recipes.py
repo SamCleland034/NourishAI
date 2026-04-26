@@ -89,7 +89,10 @@ def generate_llm_recipe(model="gemini/gemini-2.0-flash"):
 def ingest_to_chroma(meal):
     """Embeds and stores the recipe in ChromaDB."""
     client = chromadb.PersistentClient(path="./chroma_db")
-    emb_fn = embedding_functions.DefaultEmbeddingFunction()
+    emb_fn = embedding_functions.OpenAIEmbeddingFunction(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model_name="text-embedding-3-small"
+    )
     collection = client.get_or_create_collection(name="recipes", embedding_function=emb_fn)
     
     # Extract ingredients
@@ -111,6 +114,10 @@ def ingest_to_chroma(meal):
     INSTRUCTIONS: {meal['strInstructions']}
     """
     
+    recipe_id = str(uuid.uuid4())
+    img_url = meal.get('strMealThumb', '')
+    filename = download_image_sync(recipe_id, img_url)
+    
     metadata = {
         "title": meal['strMeal'],
         "category": meal['strCategory'],
@@ -119,12 +126,8 @@ def ingest_to_chroma(meal):
         "ingredients": json.dumps(ingredients_list),
         "instructions": meal['strInstructions'],
         "source": f"llm_synthetic_{meal.get('idMeal', uuid.uuid4().hex[:5])}",
-        "image": meal.get('strMealThumb', '')
+        "image": filename if filename else img_url
     }
-    
-    recipe_id = str(uuid.uuid4())
-    img_url = meal.get('strMealThumb', '')
-    download_image_sync(recipe_id, img_url)
 
     collection.add(
         documents=[document],
