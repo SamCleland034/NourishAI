@@ -45,7 +45,7 @@ def download_image_sync(rid, url, retries=2):
                     time.sleep(1)
     return None
 
-def generate_llm_recipe(model="gemini/gemini-2.0-flash"):
+def generate_llm_recipe(model="gemini/gemini-2.5-flash"):
     """Generates a creative recipe using LiteLLM (supports OpenAI, Anthropic, Gemini, etc.)."""
     
     prompt = """
@@ -139,7 +139,7 @@ def ingest_to_chroma(meal):
 def main():
     parser = argparse.ArgumentParser(description="Generate synthetic recipes using LiteLLM (Multi-Provider)")
     parser.add_argument("--count", type=int, default=1, help="Number of recipes to generate")
-    parser.add_argument("--model", type=str, default="gemini/gemini-2.0-flash", 
+    parser.add_argument("--model", type=str, default="gemini/gemini-2.5-flash", 
                         help="Model to use (e.g., 'gpt-4o', 'anthropic/claude-3-5-sonnet-20240620', 'gemini/gemini-1.5-pro')")
     parser.add_argument("--save-json", action="store_true", help="Save to JSON file instead of DB")
     

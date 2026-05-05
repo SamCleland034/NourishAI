@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # STATIC CONFIG
 DATA_DIR = "."
-DEFAULT_MODEL = "gemini/gemini-2.0-flash"
+DEFAULT_MODEL = "gemini/gemini-2.5-flash"
 
 # Initialize ChromaDB
 CHROMA_PATH = os.path.join(DATA_DIR, "chroma_db")

@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # --- MODELS CONFIG ---
-DEFAULT_MODEL = "gemini/gemini-2.0-flash"
+DEFAULT_MODEL = "gemini/gemini-2.5-flash"
 
 DAY_MAP = {
     "monday": "Mon", "tuesday": "Tue", "wednesday": "Wed", "thursday": "Thu", "friday": "Fri", "saturday": "Sat", "sunday": "Sun",

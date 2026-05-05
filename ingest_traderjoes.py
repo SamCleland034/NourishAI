@@ -57,7 +57,7 @@ except ImportError:
 from recipe_scrapers import scrape_me, WebsiteNotImplementedError
 
 # --- CONFIG ---
-DEFAULT_MODEL = "gemini/gemini-2.0-flash"
+DEFAULT_MODEL = "gemini/gemini-2.5-flash"
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "recipes")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
