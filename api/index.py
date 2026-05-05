@@ -1126,11 +1126,36 @@ async def get_grocery_list(req: GroceryRequest):
         if not isinstance(data, dict):
              return {"grocery_list": {"Other": [str(data)]}}
         
-        return {"grocery_list": data}
+        sanitized_data = {}
+        for cat, items in data.items():
+            sanitized_data[cat] = []
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        qty = item.get("qty", "")
+                        name = item.get("item", item.get("name", ""))
+                        sanitized_data[cat].append(f"{qty} {name}".strip())
+                    else:
+                        sanitized_data[cat].append(str(item))
+            else:
+                sanitized_data[cat].append(str(items))
+                
+        return {"grocery_list": sanitized_data}
     except Exception as e:
         logger.error(f"Grocery list error: {e}")
         # Simple fallback: unique items under "General"
-        unique_ings = list(set([str(i) for i in all_ingredients]))
+        unique_ings = []
+        for i in all_ingredients:
+            if isinstance(i, dict):
+                qty = i.get('qty', '')
+                name = i.get('item', i.get('name', ''))
+                val = f"{qty} {name}".strip()
+                if val not in unique_ings:
+                    unique_ings.append(val)
+            else:
+                val = str(i)
+                if val not in unique_ings:
+                    unique_ings.append(val)
         return {"grocery_list": {"General": unique_ings}}
 
 @app.post("/api/meal-prep-guide")
