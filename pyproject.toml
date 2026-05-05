@@ -24,5 +24,8 @@ dependencies = [
     "ipykernel>=7.2.0",
     "pandas>=3.0.2",
     "matplotlib>=3.10.9",
+    "aiosqlite>=0.21.0",
     "tenacity>=9.0.0",
+    "curl-cffi>=0.15.0",
+    "datasets>=4.8.4",
 ]
