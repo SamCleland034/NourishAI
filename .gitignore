@@ -29,6 +29,10 @@ env/
 
 # Databases (Local ChromaDB)
 chroma_db/
+temp_chroma/
+
+# Ingestion progress trackers
+*_progress.json
 
 # Environment Variables
 .env
