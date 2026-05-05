@@ -365,6 +365,63 @@ export default function App() {
     }
   };
 
+  const getGroceryItemText = (item) => {
+    if (typeof item === 'object' && item !== null)
+      return `${item.qty || ''} ${item.item || item.name || ''}`.trim();
+    if (typeof item === 'string' && (item.startsWith('{') || item.startsWith('"{') || item.startsWith("'{"))) {
+      try {
+        const parsed = JSON.parse(item.replace(/^['"]|['"]$/g, '').replace(/'/g, '"'));
+        return `${parsed.qty || ''} ${parsed.item || parsed.name || ''}`.trim();
+      } catch (e) {}
+    }
+    return item;
+  };
+
+  const handleGroceryCopy = () => {
+    const lines = ['GROCERY LIST', ''];
+    Object.entries(groceryList).forEach(([category, items]) => {
+      lines.push(category.toUpperCase());
+      if (Array.isArray(items)) items.forEach(item => lines.push(`- ${getGroceryItemText(item)}`));
+      lines.push('');
+    });
+    navigator.clipboard.writeText(lines.join('\n'));
+    alert('Grocery list copied to clipboard!');
+  };
+
+  const handleGroceryExportCSV = () => {
+    const rows = [['Category', 'Item']];
+    Object.entries(groceryList).forEach(([category, items]) => {
+      if (Array.isArray(items)) items.forEach(item => rows.push([category, getGroceryItemText(item)]));
+    });
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'grocery-list.csv' });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const handlePrepCopy = () => {
+    if (!Array.isArray(prepGuide) || !prepGuide.length) return;
+    const lines = ['MEAL PREP GUIDE', ''];
+    prepGuide.forEach((item, idx) => {
+      lines.push(`Step ${item.step || idx + 1}: ${item.task}`);
+      if (item.meal_name) lines.push(`Meals: ${item.meal_name}`);
+      if (item.efficiency_tip) lines.push(`Tip: ${item.efficiency_tip}`);
+      lines.push('');
+    });
+    navigator.clipboard.writeText(lines.join('\n'));
+    alert('Prep guide copied to clipboard!');
+  };
+
+  const handlePrepExportCSV = () => {
+    if (!Array.isArray(prepGuide) || !prepGuide.length) return;
+    const rows = [['Step', 'Task', 'Related Meals', 'Efficiency Tip']];
+    prepGuide.forEach((item, idx) => rows.push([item.step || idx + 1, item.task || '', item.meal_name || '', item.efficiency_tip || '']));
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'meal-prep-guide.csv' });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const fetchGroceryList = async () => {
     // Check if there are any recipes in the schedule
     const hasRecipes = Object.values(weeklySchedule).some(day => day && Object.values(day).some(rid => rid));
@@ -988,6 +1045,10 @@ export default function App() {
                 </div>
                 {Object.keys(groceryList).length > 0 ? (
                   <div className="grocery-categories">
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', justifyContent: 'flex-end' }}>
+                      <button onClick={handleGroceryCopy} style={{ background: '#1c301c', color: '#6ec86e', border: '1px solid #2a6a2a', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>📋 Copy</button>
+                      <button onClick={handleGroceryExportCSV} style={{ background: '#1c301c', color: '#6ec86e', border: '1px solid #2a6a2a', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>⬇ Export CSV</button>
+                    </div>
                     {Object.entries(groceryList).map(([category, items]) => (
                       <div key={category} style={{ marginBottom: '24px' }}>
                         <h4 style={{ color: '#4a7a4a', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px', borderBottom: '1px solid #1c301c', paddingBottom: '4px' }}>{category}</h4>
@@ -1074,9 +1135,15 @@ export default function App() {
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px' }}>
             <button className="close-modal" onClick={() => setShowPrepModal(false)}>✕</button>
             <div className="modal-content">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '32px' }}>🔪</span>
-                <h2 style={{ color: '#6ec86e', margin: 0 }}>Your Weekly Meal Prep Guide</h2>
+                <h2 style={{ color: '#6ec86e', margin: 0, flex: 1 }}>Your Weekly Meal Prep Guide</h2>
+                {Array.isArray(prepGuide) && prepGuide.length > 0 && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={handlePrepCopy} style={{ background: '#1c301c', color: '#6ec86e', border: '1px solid #2a6a2a', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>📋 Copy</button>
+                    <button onClick={handlePrepExportCSV} style={{ background: '#1c301c', color: '#6ec86e', border: '1px solid #2a6a2a', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>⬇ Export CSV</button>
+                  </div>
+                )}
               </div>
               <div style={{
                 color: '#e0d8c8',
